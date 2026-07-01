@@ -758,7 +758,9 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 
   <!-- CAMERA SCAN -->
   <div class="scan-area">
-    <button type="button" class="scan-btn" onclick="startScan()" id="scanBtn">📷 Scan Nutrition Label</button>
+    <label class="scan-btn" id="scanBtn">📷 Scan Nutrition Label
+      <input type="file" accept="image/*" capture="environment" onchange="handleFile(this)" style="display:none" id="scanInput">
+    </label>
     <div class="scan-preview" id="scanPreview">
       <video id="cameraVideo" autoplay playsinline></video>
       <canvas id="scanCanvas" style="display:none"></canvas>
@@ -856,23 +858,14 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 <script>
 var cameraStream = null;
 
-function startScan(){
-  // On mobile: offer camera or file upload
-  // On desktop: offer file upload (camera may not work well)
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.capture = 'environment'; // rear camera on mobile
-  input.onchange = function(e){
-    var file = e.target.files[0];
-    if(!file) return;
-    var reader = new FileReader();
-    reader.onload = function(ev){
-      showImage(ev.target.result);
-    };
-    reader.readAsDataURL(file);
+function handleFile(input){
+  var file = input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev){
+    showImage(ev.target.result);
   };
-  input.click();
+  reader.readAsDataURL(file);
 }
 
 function showImage(src){
@@ -914,7 +907,12 @@ function resetScan(){
   document.getElementById('scanImg').style.display = 'none';
   document.getElementById('scanActions').style.display = 'none';
   document.getElementById('scanStatus').classList.remove('active');
+  document.getElementById('scanStatus').style.background = '';
+  document.getElementById('scanStatus').style.borderColor = '';
+  var spinner = document.getElementById('scanStatus').querySelector('.scan-spinner');
+  if(spinner) spinner.style.display = '';
   document.getElementById('scanBtn').style.display = '';
+  document.getElementById('scanInput').value = '';
 }
 
 function runOCR(){
