@@ -1,0 +1,24 @@
+# For LOCAL DEVELOPMENT only — run with: docker compose up
+# Production deployment is handled by Jenkins (see Jenkinsfile)
+# Cloudflared runs as a separate TrueNAS App
+
+version: "3.9"
+services:
+  calorie-tracker:
+    build: .
+    container_name: calorie-tracker
+    ports:
+      - "5555:8080"
+    environment:
+      - DB_PATH=/data/calories.db
+      - SECRET_KEY=dev-secret-change-in-prod
+      - GOOGLE_CLIENT_ID=
+      - GOOGLE_CLIENT_SECRET=
+      - ALLOWED_EMAILS=
+      - DEBUG=1
+    volumes:
+      - calorie-tracker-data:/data
+    restart: unless-stopped
+
+volumes:
+  calorie-tracker-data:
