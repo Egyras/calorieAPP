@@ -725,19 +725,63 @@ function quickAdd(id, name){
 </div></body></html>"""
 
 PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Products — CalorieTracker</title>""" + STYLE + """</head><body>
+<title>Products — CalorieTracker</title>""" + STYLE + """
+<style>
+.scan-area{margin-bottom:1rem;}
+.scan-btn{
+  display:inline-flex;align-items:center;gap:8px;padding:10px 18px;
+  background:var(--surface2);border:1px dashed var(--border-strong);border-radius:10px;
+  color:var(--text);font-size:13px;font-weight:500;cursor:pointer;
+  transition:all .2s var(--ease);font-family:inherit;width:100%;justify-content:center;
+}
+.scan-btn:hover{border-color:var(--accent);background:rgba(74,222,128,.06);color:var(--accent-bright);}
+.scan-preview{margin-top:.75rem;position:relative;display:none;}
+.scan-preview img{max-width:100%;max-height:300px;border-radius:8px;border:1px solid var(--border);}
+.scan-preview video{max-width:100%;max-height:300px;border-radius:8px;border:1px solid var(--border);background:#000;}
+.scan-status{
+  margin-top:8px;padding:8px 12px;border-radius:8px;font-size:12px;
+  background:var(--surface2);color:var(--muted);display:none;
+}
+.scan-status.active{display:flex;align-items:center;gap:8px;}
+.scan-spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--surface3);border-top-color:var(--accent);animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.scan-actions{display:flex;gap:8px;margin-top:8px;}
+.camera-controls{display:none;margin-top:8px;}
+.camera-controls.active{display:flex;gap:8px;}
+</style>
+</head><body>
 """ + NAV.replace("active=='products'", "True") + """
 <div class="container">
 <div class="card">
   <div class="card-title">Add New Product</div>
-  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">Enter values from the nutrition label. Specify "per grams" as the serving size on the label (usually 100g).</p>
-  <form method="POST" action="/api/products" class="form-row">
-    <div class="form-group wide"><label>Product Name</label><input name="name" required placeholder="e.g. Chicken Breast"></div>
-    <div class="form-group"><label>Kcal</label><input name="kcal" type="number" step="0.1" required placeholder="165"></div>
-    <div class="form-group"><label>Fat (g)</label><input name="fat" type="number" step="0.1" placeholder="3.6"></div>
-    <div class="form-group"><label>Protein (g)</label><input name="protein" type="number" step="0.1" placeholder="31"></div>
-    <div class="form-group"><label>Carbs (g)</label><input name="carbs" type="number" step="0.1" placeholder="0"></div>
-    <div class="form-group"><label>Per (g)</label><input name="per_grams" type="number" step="0.1" value="100" placeholder="100"></div>
+  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">Enter values from the nutrition label, or scan it with your camera.</p>
+
+  <!-- CAMERA SCAN -->
+  <div class="scan-area">
+    <button type="button" class="scan-btn" onclick="startScan()" id="scanBtn">📷 Scan Nutrition Label</button>
+    <div class="scan-preview" id="scanPreview">
+      <video id="cameraVideo" autoplay playsinline></video>
+      <canvas id="scanCanvas" style="display:none"></canvas>
+      <img id="scanImg" style="display:none">
+    </div>
+    <div class="camera-controls" id="cameraControls">
+      <button type="button" class="btn btn-sm" onclick="capturePhoto()">📸 Capture</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="stopCamera()">Cancel</button>
+    </div>
+    <div class="scan-actions" id="scanActions" style="display:none">
+      <button type="button" class="btn btn-sm" onclick="runOCR()">🔍 Extract Values</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">Try Again</button>
+    </div>
+    <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
+  </div>
+
+  <form method="POST" action="/api/products" class="form-row" id="addProductForm">
+    <div class="form-group wide"><label>Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast"></div>
+    <div class="form-group"><label>Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
+    <div class="form-group"><label>Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
+    <div class="form-group"><label>Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
+    <div class="form-group"><label>Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" placeholder="0"></div>
+    <div class="form-group"><label>Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" value="100" placeholder="100"></div>
     <button type="submit" class="btn">+ Add</button>
   </form>
 </div>
@@ -805,6 +849,170 @@ function editProduct(id,n,k,f,p,c,pg){
 }
 function closeEdit(){document.getElementById('editModal').style.display='none';}
 document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEdit();});
+</script>
+
+<!-- Tesseract.js OCR -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+<script>
+var cameraStream = null;
+
+function startScan(){
+  // On mobile: offer camera or file upload
+  // On desktop: offer file upload (camera may not work well)
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment'; // rear camera on mobile
+  input.onchange = function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      showImage(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+function showImage(src){
+  var preview = document.getElementById('scanPreview');
+  var img = document.getElementById('scanImg');
+  var video = document.getElementById('cameraVideo');
+  video.style.display = 'none';
+  img.style.display = 'block';
+  img.src = src;
+  preview.style.display = 'block';
+  document.getElementById('cameraControls').classList.remove('active');
+  document.getElementById('scanActions').style.display = 'flex';
+  document.getElementById('scanBtn').style.display = 'none';
+}
+
+function capturePhoto(){
+  var video = document.getElementById('cameraVideo');
+  var canvas = document.getElementById('scanCanvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  stopCamera();
+  showImage(dataUrl);
+}
+
+function stopCamera(){
+  if(cameraStream){
+    cameraStream.getTracks().forEach(function(t){ t.stop(); });
+    cameraStream = null;
+  }
+  document.getElementById('cameraVideo').style.display = 'none';
+  document.getElementById('cameraControls').classList.remove('active');
+}
+
+function resetScan(){
+  stopCamera();
+  document.getElementById('scanPreview').style.display = 'none';
+  document.getElementById('scanImg').style.display = 'none';
+  document.getElementById('scanActions').style.display = 'none';
+  document.getElementById('scanStatus').classList.remove('active');
+  document.getElementById('scanBtn').style.display = '';
+}
+
+function runOCR(){
+  var img = document.getElementById('scanImg');
+  if(!img.src) return;
+  var status = document.getElementById('scanStatus');
+  var statusText = document.getElementById('scanText');
+  status.classList.add('active');
+  statusText.textContent = 'Loading OCR engine...';
+  document.getElementById('scanActions').style.display = 'none';
+
+  Tesseract.recognize(img.src, 'eng+lit', {
+    logger: function(m){
+      if(m.status === 'recognizing text'){
+        statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
+      }
+    }
+  }).then(function(result){
+    statusText.textContent = 'Extracting values...';
+    var text = result.data.text;
+    console.log('OCR text:', text);
+    parseNutritionLabel(text);
+    status.classList.remove('active');
+  }).catch(function(err){
+    statusText.textContent = 'OCR failed: ' + err.message;
+    console.error('OCR error:', err);
+    document.getElementById('scanActions').style.display = 'flex';
+  });
+}
+
+function parseNutritionLabel(text){
+  // Normalize text
+  var t = text.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
+  var lines = text.split(/\n/);
+  var allText = lines.join(' ');
+
+  // Common patterns on nutrition labels (handles various label formats)
+  // Energy / Calories
+  var kcalMatch = allText.match(/(?:energy|energi|energ|calories|kalorij|energin)[^\d]*(\d+[\.,]?\d*)\s*(?:kcal|kkal)/i)
+    || allText.match(/(\d+[\.,]?\d*)\s*(?:kcal|kkal)/i);
+
+  // Fat
+  var fatMatch = allText.match(/(?:fat|riebal|fedt|fett|lipid|grassi|grasa)[^\d]*(\d+[\.,]?\d*)\s*g/i)
+    || allText.match(/(?:fat|riebal)[^\d]*(\d+[\.,]?\d*)/i);
+
+  // Protein
+  var proteinMatch = allText.match(/(?:protein|baltym|protei|eiwit|blanc)[^\d]*(\d+[\.,]?\d*)\s*g/i)
+    || allText.match(/(?:protein|baltym)[^\d]*(\d+[\.,]?\d*)/i);
+
+  // Carbs
+  var carbsMatch = allText.match(/(?:carbohydrate|angliavandeniai|kolhydrat|carboidrat|hidrat|glucid|sacharid)[^\d]*(\d+[\.,]?\d*)\s*g/i)
+    || allText.match(/(?:carb|angliavandeniai|kohlenhydrat)[^\d]*(\d+[\.,]?\d*)/i);
+
+  // Fill form
+  var filled = [];
+  if(kcalMatch){
+    document.getElementById('pKcal').value = parseNum(kcalMatch[1]);
+    filled.push('kcal: ' + parseNum(kcalMatch[1]));
+  }
+  if(fatMatch){
+    document.getElementById('pFat').value = parseNum(fatMatch[1]);
+    filled.push('fat: ' + parseNum(fatMatch[1]) + 'g');
+  }
+  if(proteinMatch){
+    document.getElementById('pProtein').value = parseNum(proteinMatch[1]);
+    filled.push('protein: ' + parseNum(proteinMatch[1]) + 'g');
+  }
+  if(carbsMatch){
+    document.getElementById('pCarbs').value = parseNum(carbsMatch[1]);
+    filled.push('carbs: ' + parseNum(carbsMatch[1]) + 'g');
+  }
+
+  // Show result
+  var statusEl = document.getElementById('scanStatus');
+  var statusText = document.getElementById('scanText');
+  if(filled.length > 0){
+    statusEl.classList.add('active');
+    statusEl.style.background = 'rgba(74,222,128,.1)';
+    statusEl.style.borderColor = 'rgba(74,222,128,.3)';
+    statusText.textContent = 'Found: ' + filled.join(', ') + '. Review and add product name.';
+    statusText.style.color = '#4ade80';
+    document.getElementById('pName').focus();
+  } else {
+    statusEl.classList.add('active');
+    statusEl.style.background = 'rgba(245,158,11,.1)';
+    statusText.textContent = 'Could not extract values automatically. Please enter manually.';
+    statusText.style.color = '#f59e0b';
+  }
+  // Show scan actions for retry
+  document.getElementById('scanActions').style.display = 'flex';
+  // Remove spinner
+  var spinner = statusEl.querySelector('.scan-spinner');
+  if(spinner) spinner.style.display = 'none';
+}
+
+function parseNum(s){
+  return parseFloat(s.replace(',', '.')) || 0;
+}
 </script>
 </div></body></html>"""
 
