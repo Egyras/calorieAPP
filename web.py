@@ -905,21 +905,30 @@ function resizeForOCR(dataUrl, maxW, callback){
     var ctx = c.getContext('2d');
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, c.width, c.height);
-    // Convert to high-contrast B&W for OCR
+    // Convert to grayscale only - let Tesseract handle binarization
     var imageData = ctx.getImageData(0, 0, c.width, c.height);
-    var data = imageData.data;
-    for(var i = 0; i < data.length; i += 4){
-      var gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-      gray = ((gray - 128) * 1.8) + 128;
-      gray = gray < 0 ? 0 : (gray > 255 ? 255 : gray);
-      gray = gray < 140 ? 0 : 255;
-      data[i] = gray;
-      data[i+1] = gray;
-      data[i+2] = gray;
+    var d = imageData.data;
+    for(var i = 0; i < d.length; i += 4){
+      var gray = Math.round(0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]);
+      d[i] = gray; d[i+1] = gray; d[i+2] = gray;
     }
     ctx.putImageData(imageData, 0, 0);
-    callback(c.toDataURL('image/png'));
+    // Also show preview so user can see what OCR sees
+    var preview = document.getElementById('ocrPreview');
+    if(!preview){
+      preview = document.createElement('img');
+      preview.id = 'ocrPreview';
+      preview.style.cssText = 'max-width:100%;border:2px solid #0af;margin:8px 0;border-radius:8px;';
+      var debugEl = document.getElementById('ocrDebug');
+      if(debugEl) debugEl.parentNode.insertBefore(preview, debugEl);
+    }
+    var resultUrl = c.toDataURL('image/png');
+    preview.src = resultUrl;
+    jslog('Preprocessed image: ' + c.width + 'x' + c.height + ' grayscale');
+    callback(resultUrl);
   };
   img.onerror = function(){ callback(dataUrl); };
   img.src = dataUrl;
@@ -936,7 +945,7 @@ function handleFile(input){
   var reader = new FileReader();
   reader.onload = function(ev){
     jslog('FileReader loaded, dataURL length: ' + ev.target.result.length);
-    resizeForOCR(ev.target.result, 1500, function(resized){
+    resizeForOCR(ev.target.result, 2000, function(resized){
       jslog('Image resized, new dataURL length: ' + resized.length);
       showImage(resized);
     });
@@ -972,7 +981,7 @@ function capturePhoto(){
   canvas.getContext('2d').drawImage(video, 0, 0);
   var dataUrl = canvas.toDataURL('image/jpeg', 0.9);
   stopCamera();
-  resizeForOCR(dataUrl, 1500, function(resized){
+  resizeForOCR(dataUrl, 2000, function(resized){
     showImage(resized);
   });
 }
