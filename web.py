@@ -1363,7 +1363,19 @@ function startBarcodeScanner(){
     { facingMode: 'environment' },
     { fps: 20, qrbox: { width: 350, height: 100 }, aspectRatio: 2.5, disableFlip: true },
     function(decodedText){
+      // Any detection means focus is good - lock it
+      if(!window._focusLocked && window._focusTrack){
+        window._focusLocked = true;
+        jslog('Focus locked - barcode detected');
+        setTimeout(function(){
+          if(scannerRunning && scanConfirmCount < SCAN_CONFIRM_THRESHOLD){
+            window._focusLocked = false;
+            jslog('Focus unlocked - resuming sweep');
+          }
+        }, 5000);
+      }
       if(!validateEAN13(decodedText)){
+        // Bad checksum but focus is right, keep scanning
         return;
       }
       if(decodedText === lastScannedCode){
@@ -1395,8 +1407,8 @@ function startBarcodeScanner(){
 
         // Apply 2x zoom for small barcodes
         if(caps.zoom){
-          track.applyConstraints({advanced:[{zoom: 3.0}]}).then(function(){
-            jslog('Zoom set to 3x');
+          track.applyConstraints({advanced:[{zoom: 2.0}]}).then(function(){
+            jslog('Zoom set to 2x');
           }).catch(function(){});
         }
 
@@ -1415,12 +1427,19 @@ function startBarcodeScanner(){
           distances.push(min + (max-min)*0.9);
           var idx = 0;
           jslog('Focus sweep: ' + distances.length + ' steps, range ' + min.toFixed(2) + '-' + max.toFixed(2));
+          window._focusLocked = false;
+          window._focusTrack = track;
+          window._focusDists = distances;
+          window._focusIdx = 0;
           window._focusInterval = setInterval(function(){
             if(!scannerRunning){ clearInterval(window._focusInterval); return; }
-            var dist = distances[idx % distances.length];
+            if(window._focusLocked) return;
+            var dist = distances[window._focusIdx % distances.length];
             track.applyConstraints({advanced:[{focusMode:'manual', focusDistance: dist}]}).catch(function(){});
-            idx++;
-          }, 300);
+            window._focusIdx++;
+            // After full sweep, restart from beginning
+            if(window._focusIdx >= distances.length) window._focusIdx = 0;
+          }, 500);
         }
       } catch(e){ jslog('Camera setup error: ' + e); }
     }
