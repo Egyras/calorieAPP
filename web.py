@@ -627,7 +627,11 @@ var TRANSLATIONS = {
   'Product not found in database. Try entering values manually.': 'Produktas nerastas duomenų bazėje. Įveskite reikšmes rankiniu būdu.',
   'Could not access camera. Try typing the barcode number.': 'Nepavyko pasiekti kameros. Pabandykite įvesti brūkšninio kodo numerį.',
   'Found:': 'Rasta:',
-  'Remove': 'Pašalinti'
+  'Remove': 'Pašalinti',
+  'Cancel': 'Atšaukti',
+  'Stop Scanner': 'Sustabdyti',
+  'Kcal': 'Kcal',
+  'Quick Add': 'Greitas pridėjimas'
 };
 
 function getLang(){
@@ -896,7 +900,7 @@ var wdata = {{ week_data|safe }};
 new Chart(document.getElementById('weekChart'), {
   type: 'bar',
   data: {
-    labels: wdata.map(function(d){ return d.date.slice(5); }),
+    labels: wdata.map(function(d){ var dt=new Date(d.date); return dt.toLocaleDateString(getLang()==='lt'?'lt-LT':'en-US',{month:'short',day:'numeric'}); }),
     datasets: [
       {label:'Kcal', data:wdata.map(function(d){return d.kcal;}), backgroundColor:'rgba(74,222,128,.6)', borderRadius:4, yAxisID:'y'},
       {label:(getLang()==='lt'?'Baltymai':'Protein'), data:wdata.map(function(d){return d.protein;}), backgroundColor:'rgba(59,130,246,.6)', borderRadius:4, yAxisID:'y1'},
@@ -910,7 +914,7 @@ new Chart(document.getElementById('weekChart'), {
     scales:{
       x:{ticks:{color:'#5f6776'},grid:{color:'rgba(255,255,255,.04)'}},
       y:{position:'left',ticks:{color:'#4ade80'},grid:{color:'rgba(255,255,255,.04)'},title:{display:true,text:'Kcal',color:'#4ade80'}},
-      y1:{position:'right',ticks:{color:'#8b95a8'},grid:{display:false},title:{display:true,text:'Grams',color:'#8b95a8'}}
+      y1:{position:'right',ticks:{color:'#8b95a8'},grid:{display:false},title:{display:true,text:(getLang()==='lt'?'Gramai':'Grams'),color:'#8b95a8'}}
     }
   }
 });
@@ -1156,7 +1160,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 <div class="container">
 <div class="card">
   <div class="card-title" data-i18n="Add New Product">Add New Product</div>
-  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">" data-i18n="Enter values from the nutrition label, or scan it with your camera.">Enter values from the nutrition label, or scan it with your camera.</p>
+  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem" data-i18n="Enter values from the nutrition label, or scan it with your camera.">Enter values from the nutrition label, or scan it with your camera.</p>
 
   <!-- BARCODE SCANNER -->
   <div class="scan-area">
@@ -1173,7 +1177,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
     <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast"></div>
-    <div class="form-group"><label>Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
+    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
     <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
     <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" placeholder="0"></div>
@@ -1216,18 +1220,18 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
     <div class="card-title" data-i18n="Edit Product">Edit Product</div>
     <form method="POST" id="editForm" class="form-row" style="flex-direction:column;gap:.75rem">
       <div class="form-row">
-        <div class="form-group wide"><label>Name</label><input name="name" id="eName" required></div>
+        <div class="form-group wide"><label data-i18n="Name">Name</label><input name="name" id="eName" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Kcal</label><input name="kcal" id="eKcal" type="number" step="0.1"></div>
-        <div class="form-group"><label>Fat</label><input name="fat" id="eFat" type="number" step="0.1"></div>
-        <div class="form-group"><label>Protein</label><input name="protein" id="eProtein" type="number" step="0.1"></div>
-        <div class="form-group"><label>Carbs</label><input name="carbs" id="eCarbs" type="number" step="0.1"></div>
+        <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="eKcal" type="number" step="0.1"></div>
+        <div class="form-group"><label data-i18n="Fat">Fat</label><input name="fat" id="eFat" type="number" step="0.1"></div>
+        <div class="form-group"><label data-i18n="Protein">Protein</label><input name="protein" id="eProtein" type="number" step="0.1"></div>
+        <div class="form-group"><label data-i18n="Carbs">Carbs</label><input name="carbs" id="eCarbs" type="number" step="0.1"></div>
         <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="ePer" type="number" step="0.1"></div>
       </div>
       <div class="form-row">
         <button type="submit" class="btn">Save</button>
-        <button type="button" class="btn btn-ghost" onclick="closeEdit()">Cancel</button>
+        <button type="button" class="btn btn-ghost" onclick="closeEdit()" data-i18n="Cancel">Cancel</button>
       </div>
     </form>
   </div>
@@ -1286,7 +1290,7 @@ function startBarcodeScanner(){
   ).catch(function(err){
     jslog('Camera error: ' + err, 'ERROR');
     readerDiv.style.display = 'none';
-    btn.textContent = '📊 Scan Barcode';
+    btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
     showStatus('Could not access camera. Try typing the barcode number.', 'warn');
   });
   scannerRunning = true;
@@ -1294,7 +1298,7 @@ function startBarcodeScanner(){
 
 function stopBarcodeScanner(){
   var btn = document.getElementById('scanBarcodeBtn');
-  btn.textContent = '📊 Scan Barcode';
+  btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
   if(html5QrCode && scannerRunning){
     html5QrCode.stop().then(function(){
       document.getElementById('barcodeReader').style.display = 'none';
