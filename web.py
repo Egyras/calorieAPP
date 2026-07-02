@@ -553,6 +553,153 @@ a{color:var(--accent-bright);text-decoration:none;}
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 """
 
+
+I18N = """
+<script>
+var TRANSLATIONS = {
+  // Nav
+  'Dashboard': 'Pradžia',
+  'Products': 'Produktai',
+  'History': 'Istorija',
+  // Main page
+  'Quick Add': 'Greitas pridėjimas',
+  'Product': 'Produktas',
+  'Select...': 'Pasirinkite...',
+  'Grams': 'Gramai',
+  'Meal': 'Valgymas',
+  'Breakfast': 'Pusryčiai',
+  'breakfast': 'Pusryčiai',
+  'Lunch': 'Pietūs',
+  'lunch': 'Pietūs',
+  'Dinner': 'Vakarienė',
+  'dinner': 'Vakarienė',
+  'Snack': 'Užkandis',
+  'snack': 'Užkandis',
+  'Other': 'Kita',
+  'other': 'Kita',
+  '+ Add': '+ Pridėti',
+  'Today\'s Log': 'Dienos įrašai',
+  'Food': 'Maistas',
+  'Total': 'Viso',
+  'fat': 'riebalai',
+  'protein': 'baltymai',
+  'carbs': 'angliavandeniai',
+  'Fat': 'Riebalai',
+  'Protein': 'Baltymai',
+  'Carbs': 'Angliavandeniai',
+  'Fat (g)': 'Riebalai (g)',
+  'Protein (g)': 'Baltymai (g)',
+  'Carbs (g)': 'Angliavandeniai (g)',
+  '7-Day Trend': '7 dienų tendencija',
+  'Daily Goals': 'Dienos tikslai',
+  'Save Goals': 'Išsaugoti tikslus',
+  'Today': 'Šiandien',
+  'No products yet. Add your first food product to start tracking.': 'Produktų dar nėra. Pridėkite pirmą maisto produktą.',
+  '+ Add Products': '+ Pridėti produktus',
+  // Products page
+  'Add New Product': 'Pridėti naują produktą',
+  'Enter values from the nutrition label, or scan it with your camera.': 'Įveskite reikšmes iš etiketės arba nuskenuokite brūkšninį kodą.',
+  'Scan Barcode': 'Skenuoti kodą',
+  'Or type barcode...': 'Arba įveskite kodą...',
+  'Look up': 'Ieškoti',
+  'Product Name': 'Produkto pavadinimas',
+  'Per (g)': 'Kiekis (g)',
+  'Your Products': 'Jūsų produktai',
+  'Name': 'Pavadinimas',
+  'Per': 'Kiekis',
+  'Edit Product': 'Redaguoti produktą',
+  'Save Changes': 'Išsaugoti pakeitimus',
+  'Processing...': 'Apdorojama...',
+  // History page
+  'Daily History (Last 30 Days)': 'Dienų istorija (paskutinės 30 dienų)',
+  'Date': 'Data',
+  'Items': 'Įrašai',
+  'View': 'Peržiūrėti',
+  'No entries yet. Start logging food on the dashboard.': 'Įrašų dar nėra. Pradėkite sekti maistą pradžios puslapyje.',
+  // Login
+  'Track your nutrition with ease': 'Sekite mitybą lengvai',
+  'Sign in with Google': 'Prisijungti su Google',
+  'Continue with Demo': 'Tęsti su Demo',
+  // Scale
+  'Connect BLE scale': 'Prijungti BLE svarstykles',
+  'Scale disconnected': 'Svarstyklės atjungtos',
+  // Barcode results
+  'Product not found in database. Try entering values manually.': 'Produktas nerastas duomenų bazėje. Įveskite reikšmes rankiniu būdu.',
+  'Could not access camera. Try typing the barcode number.': 'Nepavyko pasiekti kameros. Pabandykite įvesti brūkšninio kodo numerį.',
+  'Found:': 'Rasta:',
+  'Remove': 'Pašalinti'
+};
+
+function getLang(){
+  var c = document.cookie.match('(^|;)\\s*lang=([^;]+)');
+  return c ? c[2] : 'en';
+}
+function setLang(lang){
+  document.cookie = 'lang=' + lang + ';path=/;max-age=31536000;SameSite=Lax';
+}
+function toggleLang(){
+  var lang = getLang() === 'en' ? 'lt' : 'en';
+  setLang(lang);
+  applyLang(lang);
+}
+function applyLang(lang){
+  var btn = document.getElementById('langBtn');
+  if(btn) btn.textContent = lang === 'en' ? 'LT' : 'EN';
+  
+  // Translate elements with data-i18n attribute
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key = el.getAttribute('data-i18n');
+    if(lang === 'lt' && TRANSLATIONS[key]){
+      el.textContent = TRANSLATIONS[key];
+    } else {
+      el.textContent = key;
+    }
+  });
+  // Translate placeholders
+  document.querySelectorAll('[data-i18n-ph]').forEach(function(el){
+    var key = el.getAttribute('data-i18n-ph');
+    if(lang === 'lt' && TRANSLATIONS[key]){
+      el.placeholder = TRANSLATIONS[key];
+    } else {
+      el.placeholder = key;
+    }
+  });
+  // Translate option elements
+  document.querySelectorAll('[data-i18n-opt]').forEach(function(el){
+    var key = el.getAttribute('data-i18n-opt');
+    if(lang === 'lt' && TRANSLATIONS[key]){
+      el.textContent = TRANSLATIONS[key];
+    } else {
+      el.textContent = key;
+    }
+  });
+  // Translate title attributes
+  document.querySelectorAll('[data-i18n-title]').forEach(function(el){
+    var key = el.getAttribute('data-i18n-title');
+    if(lang === 'lt' && TRANSLATIONS[key]){
+      el.title = TRANSLATIONS[key];
+    } else {
+      el.title = key;
+    }
+  });
+  // Update date label for locale
+  var dateLabel = document.getElementById('dateLabel');
+  if(dateLabel && dateLabel.getAttribute('data-date')){
+    var d = new Date(dateLabel.getAttribute('data-date'));
+    var locale = lang === 'lt' ? 'lt-LT' : 'en-US';
+    var label = d.toLocaleDateString(locale, {weekday:'short', month:'short', day:'numeric'});
+    var today = new Date();
+    if(d.toISOString().slice(0,10) === today.toISOString().slice(0,10)){
+      label = (lang === 'lt' ? 'Šiandien' : 'Today') + ' — ' + label;
+    }
+    dateLabel.textContent = label;
+  }
+}
+// Apply on load
+document.addEventListener('DOMContentLoaded', function(){ applyLang(getLang()); });
+</script>
+"""
+
 NAV = """
 <nav class="nav">
   <a href="/" class="nav-brand">
@@ -560,14 +707,15 @@ NAV = """
     <span class="nav-brand-name">CalorieTracker</span>
   </a>
   <div class="nav-links">
-    <a href="/" class="nav-link {{ 'active' if active=='dashboard' }}">📊 <span class="hide-mobile">Dashboard</span></a>
-    <a href="/products" class="nav-link {{ 'active' if active=='products' }}">📦 <span class="hide-mobile">Products</span></a>
-    <a href="/history" class="nav-link {{ 'active' if active=='history' }}">📅 <span class="hide-mobile">History</span></a>
+    <a href="/" class="nav-link {{ 'active' if active=='dashboard' }}">📊 <span class="hide-mobile" data-i18n="Dashboard">Dashboard</span></a>
+    <a href="/products" class="nav-link {{ 'active' if active=='products' }}">📦 <span class="hide-mobile" data-i18n="Products">Products</span></a>
+    <a href="/history" class="nav-link {{ 'active' if active=='history' }}">📅 <span class="hide-mobile" data-i18n="History">History</span></a>
     {% if user and user.picture %}<img src="{{ user.picture }}" class="nav-avatar" referrerpolicy="no-referrer">{% endif %}
+    <button onclick="toggleLang()" id="langBtn" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;margin-left:4px;">EN</button>
     <a href="/logout" class="nav-link">↗</a>
   </div>
 </nav>
-"""
+""" + I18N
 
 LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CalorieTracker — Login</title>""" + STYLE + """
@@ -626,9 +774,9 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   var fmt = function(dt){ return dt.toISOString().slice(0,10); };
   document.getElementById('prevDay').href = '/?date=' + fmt(prev);
   document.getElementById('nextDay').href = '/?date=' + fmt(next);
-  var label = d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
-  if(fmt(d) === fmt(new Date())) label = 'Today — ' + label;
-  document.getElementById('dateLabel').textContent = label;
+  var loc = getLang && getLang() === 'lt' ? 'lt-LT' : 'en-US'; var label = d.toLocaleDateString(loc, {weekday:'short', month:'short', day:'numeric'});
+  if(fmt(d) === fmt(new Date())) label = (loc === 'lt-LT' ? 'Šiandien' : 'Today') + ' — ' + label;
+  document.getElementById('dateLabel').textContent = label; document.getElementById('dateLabel').setAttribute('data-date', '{{ today }}');
 })();
 </script>
 
@@ -641,17 +789,17 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   </div>
   <div class="stat-card">
     <div class="stat-num fat-color">{{ totals.fat }}g</div>
-    <div class="stat-lbl">fat{% if goals %} / {{ goals.fat|int }}g{% endif %}</div>
+    <div class="stat-lbl" data-i18n-prefix="fat">fat{% if goals %} / {{ goals.fat|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill fat-fill" style="width:{{ [totals.fat/goals.fat*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
     <div class="stat-num protein-color">{{ totals.protein }}g</div>
-    <div class="stat-lbl">protein{% if goals %} / {{ goals.protein|int }}g{% endif %}</div>
+    <div class="stat-lbl" data-i18n-prefix="protein">protein{% if goals %} / {{ goals.protein|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill protein-fill" style="width:{{ [totals.protein/goals.protein*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
     <div class="stat-num carbs-color">{{ totals.carbs }}g</div>
-    <div class="stat-lbl">carbs{% if goals %} / {{ goals.carbs|int }}g{% endif %}</div>
+    <div class="stat-lbl" data-i18n-prefix="carbs">carbs{% if goals %} / {{ goals.carbs|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill carbs-fill" style="width:{{ [totals.carbs/goals.carbs*100, 100]|min }}%"></div></div>{% endif %}
   </div>
 </div>
@@ -659,7 +807,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 <!-- QUICK ADD -->
 {% if products %}
 <div class="card">
-  <div class="card-title">Quick Add</div>
+  <div class="card-title" data-i18n="Quick Add">Quick Add</div>
   <div class="quick-add">
     {% for p in products[:12] %}
     <div class="quick-chip" onclick="quickAdd({{ p.id }}, '{{ p.name|e }}')">
@@ -671,61 +819,61 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   <form method="POST" action="/api/log" class="log-form-row" id="logForm">
     <input type="hidden" name="log_date" value="{{ today }}">
     <div class="form-group wide">
-      <label>Product</label>
+      <label data-i18n="Product">Product</label>
       <select name="product_id" id="productSelect" required>
-        <option value="">Select...</option>
+        <option value="" data-i18n-opt="Select...">Select...</option>
         {% for p in products %}<option value="{{ p.id }}">{{ p.name }} ({{ p.kcal|int }} kcal/{{ p.per_grams|int }}g)</option>{% endfor %}
       </select>
     </div>
     <div class="form-group">
-      <label>Grams</label>
+      <label data-i18n="Grams">Grams</label>
       <div style="display:flex;gap:4px;align-items:stretch;">
         <input name="grams" type="number" step="0.1" min="0" id="gramsInput" required placeholder="100" style="flex:1;min-width:0;">
-        <button type="button" id="scaleBtn" onclick="toggleScale()" style="width:38px;flex-shrink:0;padding:0;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Connect BLE scale">&#9878;</button>
+        <button type="button" id="scaleBtn" onclick="toggleScale()" style="width:38px;flex-shrink:0;padding:0;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Connect BLE scale" data-i18n-title="Connect BLE scale">&#9878;</button>
       </div>
       <div id="scaleStatus" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;"></div>
     </div>
     <div class="form-group">
-      <label>Meal</label>
+      <label data-i18n="Meal">Meal</label>
       <select name="meal">
-        <option value="breakfast">Breakfast</option>
-        <option value="lunch">Lunch</option>
-        <option value="dinner">Dinner</option>
-        <option value="snack">Snack</option>
-        <option value="other">Other</option>
+        <option value="breakfast" data-i18n-opt="Breakfast">Breakfast</option>
+        <option value="lunch" data-i18n-opt="Lunch">Lunch</option>
+        <option value="dinner" data-i18n-opt="Dinner">Dinner</option>
+        <option value="snack" data-i18n-opt="Snack">Snack</option>
+        <option value="other" data-i18n-opt="Other">Other</option>
       </select>
     </div>
-    <button type="submit" class="btn">+ Add</button>
+    <button type="submit" class="btn" data-i18n="+ Add">+ Add</button>
   </form>
 </div>
 {% else %}
 <div class="card" style="text-align:center;padding:2rem">
   <p style="color:var(--muted);margin-bottom:1rem">No products yet. Add your first food product to start tracking.</p>
-  <a href="/products" class="btn" style="display:inline-block">+ Add Products</a>
+  <a href="/products" class="btn" style="display:inline-block" data-i18n="+ Add Products">+ Add Products</a>
 </div>
 {% endif %}
 
 <!-- TODAY'S LOG -->
 {% if entries %}
 <div class="card">
-  <div class="card-title">Today's Log</div>
+  <div class="card-title" data-i18n="Today's Log">Today's Log</div>
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th>Food</th><th>Grams</th><th>Meal</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
+    <tr><th data-i18n="Food">Food</th><th data-i18n="Grams">Grams</th><th data-i18n="Meal">Meal</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
     {% for e in entries %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ e.name }}</td>
       <td>{{ e.grams }}g</td>
-      <td><span class="meal-badge meal-{{ e.meal }}">{{ e.meal }}</span></td>
+      <td><span class="meal-badge meal-{{ e.meal }}" data-i18n-opt="{{ e.meal }}">{{ e.meal }}</span></td>
       <td class="kcal-color">{{ e.kcal }}</td>
       <td class="fat-color">{{ e.fat }}g</td>
       <td class="protein-color">{{ e.protein }}g</td>
       <td class="carbs-color">{{ e.carbs }}g</td>
-      <td><form method="POST" action="/api/log/{{ e.id }}/delete" style="display:inline"><button type="submit" class="btn-ghost btn-sm" title="Remove">✕</button></form></td>
+      <td><form method="POST" action="/api/log/{{ e.id }}/delete" style="display:inline"><button type="submit" class="btn-ghost btn-sm" title="Remove" data-i18n-title="Remove">✕</button></form></td>
     </tr>
     {% endfor %}
     <tr style="font-weight:600;border-top:2px solid var(--border-strong)">
-      <td colspan="3" style="color:var(--text-strong)">Total</td>
+      <td colspan="3" style="color:var(--text-strong)" data-i18n="Total">Total</td>
       <td class="kcal-color">{{ totals.kcal }}</td>
       <td class="fat-color">{{ totals.fat }}g</td>
       <td class="protein-color">{{ totals.protein }}g</td>
@@ -739,7 +887,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 
 <!-- WEEK CHART -->
 <div class="card">
-  <div class="card-title">7-Day Trend</div>
+  <div class="card-title" data-i18n="7-Day Trend">7-Day Trend</div>
   <canvas id="weekChart" height="200"></canvas>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -774,13 +922,13 @@ function quickAdd(id, name){
 
 <!-- GOALS -->
 <div class="card">
-  <div class="card-title">Daily Goals</div>
+  <div class="card-title" data-i18n="Daily Goals">Daily Goals</div>
   <form method="POST" action="/api/goals" class="form-row">
     <div class="form-group"><label>Kcal</label><input name="kcal" type="number" value="{{ goals.kcal|int if goals else 2000 }}"></div>
-    <div class="form-group"><label>Fat (g)</label><input name="fat" type="number" value="{{ goals.fat|int if goals else 65 }}"></div>
-    <div class="form-group"><label>Protein (g)</label><input name="protein" type="number" value="{{ goals.protein|int if goals else 50 }}"></div>
-    <div class="form-group"><label>Carbs (g)</label><input name="carbs" type="number" value="{{ goals.carbs|int if goals else 300 }}"></div>
-    <button type="submit" class="btn btn-ghost">Save Goals</button>
+    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" type="number" value="{{ goals.fat|int if goals else 65 }}"></div>
+    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" type="number" value="{{ goals.protein|int if goals else 50 }}"></div>
+    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" type="number" value="{{ goals.carbs|int if goals else 300 }}"></div>
+    <button type="submit" class="btn btn-ghost" data-i18n="Save Goals">Save Goals</button>
   </form>
 </div>
 
@@ -1007,16 +1155,16 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 """ + NAV.replace("active=='products'", "True") + """
 <div class="container">
 <div class="card">
-  <div class="card-title">Add New Product</div>
-  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">Enter values from the nutrition label, or scan it with your camera.</p>
+  <div class="card-title" data-i18n="Add New Product">Add New Product</div>
+  <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">" data-i18n="Enter values from the nutrition label, or scan it with your camera.">Enter values from the nutrition label, or scan it with your camera.</p>
 
   <!-- BARCODE SCANNER -->
   <div class="scan-area">
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button type="button" class="scan-btn" style="flex:1;min-width:140px;" id="scanBarcodeBtn" onclick="startBarcodeScanner()">📊 Scan Barcode</button>
+      <button type="button" class="scan-btn" style="flex:1;min-width:140px;" id="scanBarcodeBtn" onclick="startBarcodeScanner()" data-i18n="Scan Barcode">📊 Scan Barcode</button>
       <div style="flex:1;min-width:140px;display:flex;gap:4px;">
-        <input type="text" id="manualBarcode" placeholder="Or type barcode..." style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
-        <button type="button" class="btn btn-sm" onclick="lookupBarcode(document.getElementById('manualBarcode').value)" style="white-space:nowrap;">Look up</button>
+        <input type="text" id="manualBarcode" placeholder="Or type barcode..." data-i18n-ph="Or type barcode..." style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
+        <button type="button" class="btn btn-sm" onclick="lookupBarcode(document.getElementById('manualBarcode').value)" style="white-space:nowrap;" data-i18n="Look up">Look up</button>
       </div>
     </div>
     <div id="barcodeReader" style="display:none;margin-top:8px;"></div>
@@ -1024,13 +1172,13 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
-    <div class="form-group wide"><label>Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast"></div>
+    <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast"></div>
     <div class="form-group"><label>Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
-    <div class="form-group"><label>Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
-    <div class="form-group"><label>Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
-    <div class="form-group"><label>Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" placeholder="0"></div>
-    <div class="form-group"><label>Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" value="100" placeholder="100"></div>
-    <button type="submit" class="btn">+ Add</button>
+    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
+    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
+    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" placeholder="0"></div>
+    <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" value="100" placeholder="100"></div>
+    <button type="submit" class="btn" data-i18n="+ Add">+ Add</button>
   </form>
 </div>
 
@@ -1039,7 +1187,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <div class="card-title">Your Products ({{ products|length }})</div>
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th>Name</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th>Per</th><th></th></tr>
+    <tr><th data-i18n="Name">Name</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th data-i18n="Per">Per</th><th></th></tr>
     {% for p in products %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ p.name }}</td>
@@ -1065,7 +1213,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 <!-- EDIT MODAL -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;align-items:center;justify-content:center">
   <div class="card" style="max-width:500px;width:90%;margin:auto">
-    <div class="card-title">Edit Product</div>
+    <div class="card-title" data-i18n="Edit Product">Edit Product</div>
     <form method="POST" id="editForm" class="form-row" style="flex-direction:column;gap:.75rem">
       <div class="form-row">
         <div class="form-group wide"><label>Name</label><input name="name" id="eName" required></div>
@@ -1075,7 +1223,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
         <div class="form-group"><label>Fat</label><input name="fat" id="eFat" type="number" step="0.1"></div>
         <div class="form-group"><label>Protein</label><input name="protein" id="eProtein" type="number" step="0.1"></div>
         <div class="form-group"><label>Carbs</label><input name="carbs" id="eCarbs" type="number" step="0.1"></div>
-        <div class="form-group"><label>Per (g)</label><input name="per_grams" id="ePer" type="number" step="0.1"></div>
+        <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="ePer" type="number" step="0.1"></div>
       </div>
       <div class="form-row">
         <button type="submit" class="btn">Save</button>
@@ -1228,11 +1376,11 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 """ + NAV.replace("active=='history'", "True") + """
 <div class="container">
 <div class="card">
-  <div class="card-title">Daily History (Last 30 Days)</div>
+  <div class="card-title" data-i18n="Daily History (Last 30 Days)">Daily History (Last 30 Days)</div>
   {% if days %}
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th>Date</th><th>Items</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
+    <tr><th data-i18n="Date">Date</th><th data-i18n="Items">Items</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
     {% for d in days %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ d.log_date }}</td>
@@ -1241,13 +1389,13 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
       <td class="fat-color">{{ d.fat }}g</td>
       <td class="protein-color">{{ d.protein }}g</td>
       <td class="carbs-color">{{ d.carbs }}g</td>
-      <td><a href="/?date={{ d.log_date }}" class="btn-ghost btn-sm" style="display:inline-block;text-decoration:none">View</a></td>
+      <td><a href="/?date={{ d.log_date }}" class="btn-ghost btn-sm" style="display:inline-block;text-decoration:none" data-i18n="View">View</a></td>
     </tr>
     {% endfor %}
   </table>
   </div>
   {% else %}
-  <p style="color:var(--muted);text-align:center;padding:2rem">No entries yet. Start logging food on the dashboard.</p>
+  <p style="color:var(--muted);text-align:center;padding:2rem">" data-i18n="No entries yet. Start logging food on the dashboard.">No entries yet. Start logging food on the dashboard.</p>
   {% endif %}
 </div>
 </div></body></html>"""
