@@ -677,7 +677,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
         <input name="grams" type="number" step="0.1" min="0" id="gramsInput" required placeholder="100" style="flex:1;">
         <button type="button" id="scaleBtn" onclick="toggleScale()" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;" title="Connect BLE scale">&#9878;</button>
       </div>
-      <div id="scaleStatus" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);"></div>
+      <div id="scaleStatus" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;"></div>
     </div>
     <div class="form-group">
       <label>Meal</label>
@@ -803,9 +803,11 @@ var CUSTOM_NOTIFY_CHARS = [
   '0000ffe4-0000-1000-8000-00805f9b34fb',
 ];
 
-function scaleLog(msg){
-  var el = document.getElementById('scaleStatus');
-  if(el){ el.style.display = 'block'; el.textContent = msg; }
+function scaleLog(msg, showInUI){
+  if(showInUI !== false){
+    var el = document.getElementById('scaleStatus');
+    if(el){ el.style.display = 'block'; el.textContent = msg; }
+  }
   try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:'[SCALE] ' + msg})}); } catch(e){}
 }
 
@@ -936,7 +938,7 @@ function handleRawWeight(event){
   var data = event.target.value;
   var bytes = [];
   for(var i = 0; i < data.byteLength; i++) bytes.push(data.getUint8(i));
-  scaleLog('Raw: [' + bytes.join(', ') + ']');
+  scaleLog('Raw: [' + bytes.join(', ') + ']', false); // server log only, keep out of the UI
 
   if(data.byteLength >= 11){
     var w = data.getUint16(9, false); // bytes 9-10, big-endian
