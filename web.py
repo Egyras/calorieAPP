@@ -795,7 +795,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
       <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">📷 Try Again</button>
     </div>
     <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
-    <pre id="ocrDebug" style="display:none;margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-all"></pre>
+    <pre id="ocrDebug" style="margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all">Debug log will appear here...</pre>
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
@@ -878,6 +878,10 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 <script>
 function jslog(msg, level){
   level = level || 'INFO';
+  try {
+    var d = document.getElementById('ocrDebug');
+    if(d) d.textContent = (d.textContent === 'Debug log will appear here...' ? '' : d.textContent) + '[' + level + '] ' + msg + '\n';
+  } catch(e2){}
   try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
 }
 jslog('Products page JS init');
@@ -1214,7 +1218,7 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 </div>
 </div></body></html>"""
 
-# ── Run ───────────────────────────────────────────────────────────────────────
+# -- Run --
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=os.environ.get("DEBUG", "0") == "1")
