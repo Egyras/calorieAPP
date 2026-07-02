@@ -773,6 +773,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">Enter values from the nutrition label, or scan it with your camera.</p>
 
   <!-- CAMERA SCAN -->
+  <script>window.onerror=function(msg,url,line){var d=document.getElementById('ocrDebug');if(d)d.textContent+='JS ERROR: '+msg+' (line '+line+')\\n';return false;};</script>
   <div class="scan-area">
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <label class="scan-btn" style="flex:1;min-width:140px;" id="scanBtnCamera">📷 Take Photo
@@ -795,7 +796,8 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
       <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">📷 Try Again</button>
     </div>
     <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
-    <pre id="ocrDebug" style="margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all">Debug log will appear here...</pre>
+    <pre id="ocrDebug" onclick="this.textContent+='click works! '" style="margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all">Tap me to test JS...</pre>
+    <script>document.getElementById('ocrDebug').textContent='JS works! Page loaded OK.';</script>
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
