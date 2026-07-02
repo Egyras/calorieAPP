@@ -206,6 +206,16 @@ def index():
         entries=entries, totals=totals, goals=goals,
         week_data=json.dumps(week_data))
 
+@app.route("/api/jslog", methods=["POST"])
+def js_log():
+    """Receive browser JS logs and print to stdout (docker logs)."""
+    import sys
+    data = request.get_json(silent=True) or {}
+    msg = data.get("msg", "")
+    level = data.get("level", "INFO")
+    print(f"[JS {level}] {msg}", flush=True)
+    return "ok", 200
+
 @app.route("/api/products", methods=["POST"])
 @login_required
 def add_product():
@@ -859,8 +869,18 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 </script>
 
 <!-- Tesseract.js OCR -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
+function jslog(msg, level){
+  level = level || 'INFO';
+  try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
+}
+jslog('Products page loaded, loading Tesseract.js...');
+</script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
+  onload="jslog('Tesseract.js script loaded OK');"
+  onerror="jslog('Tesseract.js script FAILED to load','ERROR');"></script>
+<script>
+jslog('Tesseract global exists: ' + (typeof Tesseract !== 'undefined'));
 var cameraStream = null;
 var ocrWorker = null;
 
@@ -890,17 +910,21 @@ function resizeForOCR(dataUrl, maxW, callback){
 function handleFile(input){
   var file = input.files[0];
   if(!file) return;
+  jslog('handleFile called, file: ' + file.name + ' size: ' + file.size + ' type: ' + file.type);
   var status = document.getElementById('scanStatus');
   var statusText = document.getElementById('scanText');
   status.classList.add('active');
   statusText.textContent = 'Loading image...';
   var reader = new FileReader();
   reader.onload = function(ev){
+    jslog('FileReader loaded, dataURL length: ' + ev.target.result.length);
     resizeForOCR(ev.target.result, 1500, function(resized){
+      jslog('Image resized, new dataURL length: ' + resized.length);
       showImage(resized);
     });
   };
-  reader.onerror = function(){
+  reader.onerror = function(e){
+    jslog('FileReader error: ' + e, 'ERROR');
     statusText.textContent = 'Failed to read image file.';
     statusText.style.color = '#f59e0b';
   };
@@ -964,19 +988,17 @@ function resetScan(){
 async function runOCR(){
   var img = document.getElementById('scanImg');
   if(!img.src) return;
+  jslog('runOCR called, img.src length: ' + img.src.length);
   var status = document.getElementById('scanStatus');
   var statusText = document.getElementById('scanText');
-  var debugEl = document.getElementById('ocrDebug');
   status.classList.add('active');
   document.getElementById('scanActions').style.display = 'none';
-  debugEl.style.display = 'block';
-  debugEl.textContent = 'Starting OCR...';
 
   // Check if Tesseract loaded
   if(typeof Tesseract === 'undefined'){
+    jslog('Tesseract is UNDEFINED - script did not load', 'ERROR');
     statusText.textContent = 'OCR library not loaded. Enter values manually.';
     statusText.style.color = '#f59e0b';
-    debugEl.textContent = 'ERROR: Tesseract.js script failed to load from CDN.';
     var spinner = status.querySelector('.scan-spinner');
     if(spinner) spinner.style.display = 'none';
     document.getElementById('scanActions').style.display = 'flex';
@@ -984,48 +1006,42 @@ async function runOCR(){
   }
 
   try {
-    statusText.textContent = 'Loading OCR engine...';
-    debugEl.textContent = 'Tesseract.js loaded. Creating worker...';
+    statusText.textContent = 'Loading OCR engine (may take 10-20s)...';
+    jslog('Creating Tesseract worker...');
 
     if(!ocrWorker){
       ocrWorker = await Tesseract.createWorker('eng', 1, {
         logger: function(m){
+          jslog('Tesseract: ' + m.status + ' ' + Math.round((m.progress||0)*100) + '%');
           if(m.status === 'loading tesseract core'){
             statusText.textContent = 'Loading OCR core...';
-            debugEl.textContent += '\\nLoading core...';
           } else if(m.status === 'loading language traineddata'){
             statusText.textContent = 'Loading language data...';
-            debugEl.textContent += '\\nLoading language data...';
           } else if(m.status === 'initializing tesseract'){
             statusText.textContent = 'Initializing...';
-            debugEl.textContent += '\\nInitializing...';
           } else if(m.status === 'recognizing text'){
-            var pct = Math.round((m.progress||0)*100);
-            statusText.textContent = 'Reading label... ' + pct + '%';
-            if(pct % 20 === 0) debugEl.textContent += '\\nRecognizing... ' + pct + '%';
-          } else {
-            debugEl.textContent += '\\n' + m.status + ' ' + Math.round((m.progress||0)*100) + '%';
+            statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
           }
         }
       });
-      debugEl.textContent += '\\nWorker created OK.';
+      jslog('Worker created successfully');
     } else {
       statusText.textContent = 'Reading label...';
+      jslog('Reusing existing worker');
     }
 
-    debugEl.textContent += '\\nStarting recognize...';
+    jslog('Calling worker.recognize...');
     var result = await ocrWorker.recognize(img.src);
     var text = result.data.text;
-    debugEl.textContent = 'OCR result:\\n' + text;
+    jslog('OCR raw text: ' + text);
     statusText.textContent = 'Extracting values...';
     parseNutritionLabel(text);
     document.getElementById('scanActions').style.display = 'flex';
   } catch(err) {
     var errMsg = err.message || String(err);
+    jslog('OCR error: ' + errMsg, 'ERROR');
     statusText.textContent = 'OCR failed: ' + errMsg;
     statusText.style.color = '#f59e0b';
-    debugEl.textContent += '\\nERROR: ' + errMsg;
-    console.error('OCR error:', err);
     document.getElementById('scanActions').style.display = 'flex';
     var spinner = status.querySelector('.scan-spinner');
     if(spinner) spinner.style.display = 'none';
@@ -1039,7 +1055,7 @@ function parseNutritionLabel(text){
   // Also try line-by-line for structured labels
   var lines = text.split(/\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
 
-  console.log('Parsing lines:', lines);
+  jslog('parseNutritionLabel lines: ' + JSON.stringify(lines));
 
   // Helper: find number near a keyword in any line
   function findValue(keywords){
@@ -1090,6 +1106,7 @@ function parseNutritionLabel(text){
   var carbsVal = findValue(['carbohydrate', 'angliavandeniai', 'kolhydrat', 'carboidrat', 'kohlenhydrat', 'carb', 'hidrat', 'glucid', 'sacharid', 'koolhydra']);
 
   // Fill form
+  jslog('Extracted values - kcal:' + kcalVal + ' fat:' + fatVal + ' protein:' + proteinVal + ' carbs:' + carbsVal);
   var filled = [];
   if(kcalVal !== null){
     document.getElementById('pKcal').value = kcalVal;
