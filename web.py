@@ -222,6 +222,34 @@ def js_log():
     print(f"[JS {level}] {msg}", flush=True)
     return "ok", 200
 
+@app.route("/api/barcode/<code>")
+@login_required
+def barcode_lookup(code):
+    """Look up product nutrition from OpenFoodFacts by barcode."""
+    import urllib.request
+    url = f"https://world.openfoodfacts.net/api/v2/product/{code}.json?fields=product_name,brands,nutriments"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "CalorieTracker/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        if data.get("status") != 1:
+            return jsonify({"found": False}), 200
+        p = data.get("product", {})
+        n = p.get("nutriments", {})
+        return jsonify({
+            "found": True,
+            "name": p.get("product_name", ""),
+            "brand": p.get("brands", ""),
+            "kcal": round(n.get("energy-kcal_100g", 0)),
+            "fat": n.get("fat_100g", 0),
+            "protein": n.get("proteins_100g", 0),
+            "carbs": n.get("carbohydrates_100g", 0),
+        })
+    except Exception as e:
+        print(f"[BARCODE] Error looking up {code}: {e}", flush=True)
+        return jsonify({"found": False, "error": str(e)}), 200
+
+
 @app.route("/api/products", methods=["POST"])
 @login_required
 def add_product():
@@ -772,32 +800,17 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <div class="card-title">Add New Product</div>
   <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem">Enter values from the nutrition label, or scan it with your camera.</p>
 
-  <!-- CAMERA SCAN -->
-  <script>window.onerror=function(msg,url,line){var d=document.getElementById('ocrDebug');if(d)d.textContent+='JS ERROR: '+msg+' (line '+line+')\\n';return false;};</script>
+  <!-- BARCODE SCANNER -->
   <div class="scan-area">
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <label class="scan-btn" style="flex:1;min-width:140px;" id="scanBtnCamera">📷 Take Photo
-        <input type="file" accept="image/*" capture="environment" onchange="handleFile(this)" style="display:none" id="scanInputCamera">
-      </label>
-      <label class="scan-btn" style="flex:1;min-width:140px;" id="scanBtnAlbum">🖼️ From Album
-        <input type="file" accept="image/*" onchange="handleFile(this)" style="display:none" id="scanInputAlbum">
-      </label>
+      <button type="button" class="scan-btn" style="flex:1;min-width:140px;" id="scanBarcodeBtn" onclick="startBarcodeScanner()">📊 Scan Barcode</button>
+      <div style="flex:1;min-width:140px;display:flex;gap:4px;">
+        <input type="text" id="manualBarcode" placeholder="Or type barcode..." style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
+        <button type="button" class="btn btn-sm" onclick="lookupBarcode(document.getElementById('manualBarcode').value)" style="white-space:nowrap;">Look up</button>
+      </div>
     </div>
-    <div class="scan-preview" id="scanPreview">
-      <video id="cameraVideo" autoplay playsinline></video>
-      <canvas id="scanCanvas" style="display:none"></canvas>
-      <img id="scanImg" style="display:none">
-    </div>
-    <div class="camera-controls" id="cameraControls">
-      <button type="button" class="btn btn-sm" onclick="capturePhoto()">📸 Capture</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="stopCamera()">Cancel</button>
-    </div>
-    <div class="scan-actions" id="scanActions" style="display:none">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">📷 Try Again</button>
-    </div>
+    <div id="barcodeReader" style="display:none;margin-top:8px;"></div>
     <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
-    <pre id="ocrDebug" onclick="this.textContent+='click works! '" style="margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all">Tap me to test JS...</pre>
-    <script>document.getElementById('ocrDebug').textContent='JS works! Page loaded OK.';</script>
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
@@ -876,372 +889,126 @@ function closeEdit(){document.getElementById('editModal').style.display='none';}
 document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEdit();});
 </script>
 
-<!-- Tesseract.js OCR -->
+<!-- Barcode Scanner -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
+var html5QrCode = null;
+var scannerRunning = false;
+
 function jslog(msg, level){
   level = level || 'INFO';
-  try {
-    var d = document.getElementById('ocrDebug');
-    if(d) d.textContent = (d.textContent === 'Debug log will appear here...' ? '' : d.textContent) + '[' + level + '] ' + msg + String.fromCharCode(10);
-  } catch(e2){}
   try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
 }
-jslog('Products page JS init');
 
-var cameraStream = null;
-var ocrWorker = null;
-var tesseractReady = false;
+function startBarcodeScanner(){
+  var readerDiv = document.getElementById('barcodeReader');
+  var btn = document.getElementById('scanBarcodeBtn');
 
-// Resize and preprocess image for better OCR
-function resizeForOCR(dataUrl, maxW, callback){
-  var img = new Image();
-  img.onload = function(){
-    var w = img.width;
-    var h = img.height;
-    var scale = (w > maxW) ? maxW / w : 1;
-    var c = document.createElement('canvas');
-    c.width = Math.round(w * scale);
-    c.height = Math.round(h * scale);
-    var ctx = c.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-    // Convert to grayscale only - let Tesseract handle binarization
-    var imageData = ctx.getImageData(0, 0, c.width, c.height);
-    var d = imageData.data;
-    for(var i = 0; i < d.length; i += 4){
-      var gray = Math.round(0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]);
-      d[i] = gray; d[i+1] = gray; d[i+2] = gray;
-    }
-    ctx.putImageData(imageData, 0, 0);
-    // Also show preview so user can see what OCR sees
-    var preview = document.getElementById('ocrPreview');
-    if(!preview){
-      preview = document.createElement('img');
-      preview.id = 'ocrPreview';
-      preview.style.cssText = 'max-width:100%;border:2px solid #0af;margin:8px 0;border-radius:8px;';
-      var debugEl = document.getElementById('ocrDebug');
-      if(debugEl) debugEl.parentNode.insertBefore(preview, debugEl);
-    }
-    var resultUrl = c.toDataURL('image/png');
-    preview.src = resultUrl;
-    jslog('Preprocessed image: ' + c.width + 'x' + c.height + ' grayscale');
-    callback(resultUrl);
-  };
-  img.onerror = function(){ callback(dataUrl); };
-  img.src = dataUrl;
-}
-
-function handleFile(input){
-  var file = input.files[0];
-  if(!file) return;
-  jslog('handleFile called, file: ' + file.name + ' size: ' + file.size + ' type: ' + file.type);
-  var status = document.getElementById('scanStatus');
-  var statusText = document.getElementById('scanText');
-  status.classList.add('active');
-  statusText.textContent = 'Loading image...';
-  var reader = new FileReader();
-  reader.onload = function(ev){
-    jslog('FileReader loaded, dataURL length: ' + ev.target.result.length);
-    resizeForOCR(ev.target.result, 2000, function(resized){
-      jslog('Image resized, new dataURL length: ' + resized.length);
-      showImage(resized);
-    });
-  };
-  reader.onerror = function(e){
-    jslog('FileReader error: ' + e, 'ERROR');
-    statusText.textContent = 'Failed to read image file.';
-    statusText.style.color = '#f59e0b';
-  };
-  reader.readAsDataURL(file);
-}
-
-function showImage(src){
-  var preview = document.getElementById('scanPreview');
-  var img = document.getElementById('scanImg');
-  var video = document.getElementById('cameraVideo');
-  video.style.display = 'none';
-  img.style.display = 'block';
-  img.src = src;
-  preview.style.display = 'block';
-  document.getElementById('cameraControls').classList.remove('active');
-  document.getElementById('scanBtnCamera').style.display = 'none';
-  document.getElementById('scanBtnAlbum').style.display = 'none';
-  // Auto-run OCR immediately
-  runOCR();
-}
-
-function capturePhoto(){
-  var video = document.getElementById('cameraVideo');
-  var canvas = document.getElementById('scanCanvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  var dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  stopCamera();
-  resizeForOCR(dataUrl, 2000, function(resized){
-    showImage(resized);
-  });
-}
-
-function stopCamera(){
-  if(cameraStream){
-    cameraStream.getTracks().forEach(function(t){ t.stop(); });
-    cameraStream = null;
-  }
-  document.getElementById('cameraVideo').style.display = 'none';
-  document.getElementById('cameraControls').classList.remove('active');
-}
-
-function resetScan(){
-  stopCamera();
-  document.getElementById('scanPreview').style.display = 'none';
-  document.getElementById('scanImg').style.display = 'none';
-  document.getElementById('scanActions').style.display = 'none';
-  document.getElementById('scanStatus').classList.remove('active');
-  document.getElementById('scanStatus').style.background = '';
-  document.getElementById('scanStatus').style.borderColor = '';
-  document.getElementById('ocrDebug').style.display = 'none';
-  var spinner = document.getElementById('scanStatus').querySelector('.scan-spinner');
-  if(spinner) spinner.style.display = '';
-  document.getElementById('scanBtnCamera').style.display = '';
-  document.getElementById('scanBtnAlbum').style.display = '';
-  document.getElementById('scanInputCamera').value = '';
-  document.getElementById('scanInputAlbum').value = '';
-}
-
-async function runOCR(){
-  var img = document.getElementById('scanImg');
-  if(!img.src) return;
-  jslog('runOCR called, img.src length: ' + img.src.length);
-  var status = document.getElementById('scanStatus');
-  var statusText = document.getElementById('scanText');
-  status.classList.add('active');
-  document.getElementById('scanActions').style.display = 'none';
-
-  // Wait for Tesseract to load (it loads async now)
-  if(typeof Tesseract === 'undefined'){
-    statusText.textContent = 'Loading OCR library...';
-    jslog('Waiting for Tesseract.js to load...');
-    var waitCount = 0;
-    var waitInterval = setInterval(function(){
-      waitCount++;
-      if(typeof Tesseract !== 'undefined'){
-        clearInterval(waitInterval);
-        jslog('Tesseract.js now available after waiting');
-        runOCR();
-      } else if(waitCount > 30){
-        clearInterval(waitInterval);
-        jslog('Tesseract.js failed to load after 15s', 'ERROR');
-        statusText.textContent = 'OCR library failed to load. Enter values manually.';
-        statusText.style.color = '#f59e0b';
-        var spinner = status.querySelector('.scan-spinner');
-        if(spinner) spinner.style.display = 'none';
-        document.getElementById('scanActions').style.display = 'flex';
-      }
-    }, 500);
+  if(scannerRunning){
+    stopBarcodeScanner();
     return;
   }
 
-  try {
-    statusText.textContent = 'Loading OCR engine (may take 10-20s)...';
-    jslog('Creating Tesseract worker...');
+  readerDiv.style.display = 'block';
+  btn.textContent = 'Stop Scanner';
+  jslog('Starting barcode scanner');
 
-    if(!ocrWorker){
-      ocrWorker = await Tesseract.createWorker('eng+lit', 1, {
-        logger: function(m){
-          jslog('Tesseract: ' + m.status + ' ' + Math.round((m.progress||0)*100) + '%');
-          if(m.status === 'loading tesseract core'){
-            statusText.textContent = 'Loading OCR core...';
-          } else if(m.status === 'loading language traineddata'){
-            statusText.textContent = 'Loading language data...';
-          } else if(m.status === 'initializing tesseract'){
-            statusText.textContent = 'Initializing...';
-          } else if(m.status === 'recognizing text'){
-            statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
-          }
-        }
-      });
-      jslog('Worker created successfully');
-    } else {
-      statusText.textContent = 'Reading label...';
-      jslog('Reusing existing worker');
+  html5QrCode = new Html5Qrcode('barcodeReader');
+  html5QrCode.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.5 },
+    function(decodedText){
+      jslog('Barcode detected: ' + decodedText);
+      stopBarcodeScanner();
+      lookupBarcode(decodedText);
+    },
+    function(errorMessage){
+      // Scan miss - ignore
     }
+  ).catch(function(err){
+    jslog('Camera error: ' + err, 'ERROR');
+    readerDiv.style.display = 'none';
+    btn.textContent = '📊 Scan Barcode';
+    showStatus('Could not access camera. Try typing the barcode number.', 'warn');
+  });
+  scannerRunning = true;
+}
 
-    jslog('Calling worker.recognize...');
-    var result = await ocrWorker.recognize(img.src);
-    var text = result.data.text;
-    jslog('OCR raw text: ' + text);
-    statusText.textContent = 'Extracting values...';
-    parseNutritionLabel(text);
-    document.getElementById('scanActions').style.display = 'flex';
-  } catch(err) {
-    var errMsg = err.message || String(err);
-    jslog('OCR error: ' + errMsg, 'ERROR');
-    statusText.textContent = 'OCR failed: ' + errMsg;
-    statusText.style.color = '#f59e0b';
-    document.getElementById('scanActions').style.display = 'flex';
-    var spinner = status.querySelector('.scan-spinner');
-    if(spinner) spinner.style.display = 'none';
-    ocrWorker = null;
+function stopBarcodeScanner(){
+  var btn = document.getElementById('scanBarcodeBtn');
+  btn.textContent = '📊 Scan Barcode';
+  if(html5QrCode && scannerRunning){
+    html5QrCode.stop().then(function(){
+      document.getElementById('barcodeReader').style.display = 'none';
+      scannerRunning = false;
+      jslog('Scanner stopped');
+    }).catch(function(e){ scannerRunning = false; });
+  } else {
+    document.getElementById('barcodeReader').style.display = 'none';
+    scannerRunning = false;
   }
 }
 
-function parseNutritionLabel(text){
-  // Fix common OCR character misreads in numeric contexts
-  function fixOcrText(t){
-    // Replace common letter-to-digit confusions near numbers/units
-    t = t.replace(/([0-9])B/g, '$16');  // 2B0 -> 260
-    t = t.replace(/B([0-9])/g, '6$1');  // B0 -> 60
-    t = t.replace(/([0-9])O([0-9])/g, '$10$2');  // 1O0 -> 100
-    t = t.replace(/([0-9])l([0-9])/g, '$11$2');  // 3l1 -> 311
-    t = t.replace(/([0-9])I([0-9])/g, '$11$2');  // 3I1 -> 311
-    t = t.replace(/([0-9])S([0-9])/g, '$15$2');  // 2S0 -> 250
-    // Fix spaces that break decimal numbers: "3 1" near "g" -> "3.1"
-    t = t.replace(/(\d+)\s+(\d)\s*g/gi, '$1.$2 g');
-    // Fix "319" that should be "3.19" or "3,1" (3+ digits with no decimal before 'g')
-    return t;
-  }
-
-  var fixedText = fixOcrText(text);
-  jslog('OCR after fixes: ' + fixedText.substring(0, 500));
-  
-  // Normalize: fix common OCR errors, normalize whitespace
-  var allText = fixedText.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
-  // Also try line-by-line for structured labels
-  var lines = fixedText.split(String.fromCharCode(10)).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
-
-  // Helper: find number near a keyword in any line
-  function findValue(keywords, isEnergy){
-    for(var i=0; i<lines.length; i++){
-      var line = lines[i];
-      for(var k=0; k<keywords.length; k++){
-        if(line.toLowerCase().indexOf(keywords[k]) >= 0){
-          var nums = line.match(/(\d+[\.,]\d+|\d+)/g);
-          if(nums && nums.length > 0){
-            if(isEnergy){
-              var parsed = nums.map(function(n){ return parseFloat(n.replace(',','.')); }).filter(function(v){ return v > 0 && !isNaN(v); });
-              jslog('Energy line: ' + line + ' -> parsed nums: ' + JSON.stringify(parsed));
-              if(parsed.length >= 2){
-                parsed.sort(function(a,b){ return a - b; });
-                // kcal is the smaller value (1 kcal = 4.184 kJ)
-                // But validate: if smallest < 1, skip it
-                var kcal = parsed[0];
-                if(kcal < 1 && parsed.length > 1) kcal = parsed[1];
-                return Math.round(kcal);
-              }
-              if(parsed.length === 1){
-                // Single number - if > 400 it might be kJ, convert
-                if(parsed[0] > 400) return Math.round(parsed[0] / 4.184);
-                return Math.round(parsed[0]);
-              }
-            }
-            // For macros, take the first number after the keyword
-            var afterKeyword = line.substring(line.toLowerCase().indexOf(keywords[k]) + keywords[k].length);
-            var afterNum = afterKeyword.match(/(\d+[\.,]\d+|\d+)/);
-            if(afterNum){
-              var val = parseFloat(afterNum[1].replace(',','.'));
-              // Sanity: macros per 100g should be 0-100
-              if(val > 100){
-                jslog('Suspicious value ' + val + ' for ' + keywords[k] + ', trying /10: ' + (val/10));
-                val = Math.round(val/10 * 10) / 10;
-              }
-              return val;
-            }
-            return parseFloat(nums[0].replace(',','.'));
-          }
-        }
-      }
-    }
-    // Fallback: search in full text
-    for(var k=0; k<keywords.length; k++){
-      var re = new RegExp(keywords[k] + '[^\\d]{0,20}(\\d+[\\.,]?\\d*)', 'i');
-      var m = allText.match(re);
-      if(m){
-        var val = parseFloat(m[1].replace(',','.'));
-        if(!isEnergy && val > 100) val = Math.round(val/10 * 10) / 10;
-        return val;
-      }
-    }
-    return null;
-  }
-
-  // Energy / Calories
-  var kcalVal = findValue(['kcal', 'kkal', 'energi', 'energy', 'calories', 'kalorij', 'energin', 'energ'], true);
-
-  // Fat
-  var fatVal = findValue(['fat', 'riebal', 'fedt', 'fett', 'lipid', 'grassi', 'grasa', 'vet', 'tuk'], false);
-
-  // Protein
-  var proteinVal = findValue(['protein', 'baltym', 'protei', 'eiwit', 'blanc', 'belok'], false);
-
-  // Carbs
-  var carbsVal = findValue(['carbohydrate', 'angliavandeniai', 'angliavandeni', 'kolhydrat', 'carboidrat', 'kohlenhydrat', 'carb', 'hidrat', 'glucid', 'sacharid', 'koolhydra'], false);
-
-  // Fill form
-  jslog('Extracted values - kcal:' + kcalVal + ' fat:' + fatVal + ' protein:' + proteinVal + ' carbs:' + carbsVal);
-  var filled = [];
-  if(kcalVal !== null && kcalVal > 0){
-    document.getElementById('pKcal').value = kcalVal;
-    filled.push('kcal: ' + kcalVal);
-  }
-  if(fatVal !== null){
-    document.getElementById('pFat').value = fatVal;
-    filled.push('fat: ' + fatVal + 'g');
-  }
-  if(proteinVal !== null){
-    document.getElementById('pProtein').value = proteinVal;
-    filled.push('protein: ' + proteinVal + 'g');
-  }
-  if(carbsVal !== null){
-    document.getElementById('pCarbs').value = carbsVal;
-    filled.push('carbs: ' + carbsVal + 'g');
-  }
-
-  // Show result
-  var statusEl = document.getElementById('scanStatus');
-  var statusText = document.getElementById('scanText');
-  if(filled.length > 0){
-    statusEl.classList.add('active');
-    statusEl.style.background = 'rgba(74,222,128,.1)';
-    statusEl.style.borderColor = 'rgba(74,222,128,.3)';
-    statusText.textContent = 'Found: ' + filled.join(', ') + '. Review and add product name.';
-    statusText.style.color = '#4ade80';
-    document.getElementById('pName').focus();
+function showStatus(msg, type){
+  var el = document.getElementById('scanStatus');
+  var txt = document.getElementById('scanText');
+  el.classList.add('active');
+  var spinner = el.querySelector('.scan-spinner');
+  if(type === 'loading'){
+    spinner.style.display = '';
+    el.style.background = '';
+    el.style.borderColor = '';
+    txt.style.color = 'var(--muted)';
+  } else if(type === 'success'){
+    spinner.style.display = 'none';
+    el.style.background = 'rgba(74,222,128,.1)';
+    el.style.borderColor = 'rgba(74,222,128,.3)';
+    txt.style.color = '#4ade80';
   } else {
-    statusEl.classList.add('active');
-    statusEl.style.background = 'rgba(245,158,11,.1)';
-    statusText.textContent = 'Could not extract values automatically. Please enter manually.';
-    statusText.style.color = '#f59e0b';
+    spinner.style.display = 'none';
+    el.style.background = 'rgba(245,158,11,.1)';
+    el.style.borderColor = 'rgba(245,158,11,.3)';
+    txt.style.color = '#f59e0b';
   }
-  // Show scan actions for retry
-  document.getElementById('scanActions').style.display = 'flex';
-  // Remove spinner
-  var spinner = statusEl.querySelector('.scan-spinner');
-  if(spinner) spinner.style.display = 'none';
+  txt.textContent = msg;
+}
+
+function lookupBarcode(code){
+  code = (code || '').trim();
+  if(!code){
+    showStatus('Please enter a barcode number.', 'warn');
+    return;
+  }
+  jslog('Looking up barcode: ' + code);
+  showStatus('Looking up barcode ' + code + '...', 'loading');
+
+  fetch('/api/barcode/' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      jslog('Barcode result: ' + JSON.stringify(data));
+      if(data.found){
+        var name = data.brand ? (data.brand + ' ' + data.name) : data.name;
+        document.getElementById('pName').value = name;
+        document.getElementById('pKcal').value = data.kcal || '';
+        document.getElementById('pFat').value = data.fat || '';
+        document.getElementById('pProtein').value = data.protein || '';
+        document.getElementById('pCarbs').value = data.carbs || '';
+        showStatus('Found: ' + name + ' (' + data.kcal + ' kcal, ' + data.fat + 'g fat, ' + data.protein + 'g protein, ' + data.carbs + 'g carbs)', 'success');
+        document.getElementById('pName').focus();
+      } else {
+        showStatus('Product not found in database. Try entering values manually.', 'warn');
+      }
+    })
+    .catch(function(err){
+      jslog('Barcode lookup error: ' + err, 'ERROR');
+      showStatus('Lookup failed: ' + err.message, 'warn');
+    });
 }
 
 function parseNum(s){
   return parseFloat(s.replace(',', '.')) || 0;
 }
-
-jslog('All JS functions defined OK');
-</script>
-<script>
-// Load Tesseract AFTER all functions are defined so handleFile always exists
-var tScript = document.createElement('script');
-tScript.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-tScript.onload = function(){
-  tesseractReady = true;
-  jslog('Tesseract.js loaded and ready');
-};
-tScript.onerror = function(){
-  jslog('Tesseract.js FAILED to load from CDN', 'ERROR');
-};
-document.head.appendChild(tScript);
-jslog('Tesseract.js loading started (async)');
+jslog('Barcode scanner JS loaded');
 </script>
 </div></body></html>"""
 
