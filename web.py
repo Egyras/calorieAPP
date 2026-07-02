@@ -1346,11 +1346,72 @@ function startBarcodeScanner(){
   }
 
   readerDiv.style.display = 'block';
-  btn.textContent = 'Stop Scanner';
+  btn.textContent = getLang()==='lt' ? '⏹ Sustabdyti' : '⏹ Stop Scanner';
   lastScannedCode = '';
   scanConfirmCount = 0;
   jslog('Starting barcode scanner');
 
+  // Try native BarcodeDetector API first (Chrome Android - much better focus handling)
+  if('BarcodeDetector' in window){
+    jslog('Using native BarcodeDetector API');
+    startNativeScanner(readerDiv, btn);
+  } else {
+    jslog('Using html5-qrcode fallback');
+    startHtml5Scanner(readerDiv, btn);
+  }
+}
+
+function startNativeScanner(readerDiv, btn){
+  var video = document.createElement('video');
+  video.setAttribute('autoplay','');
+  video.setAttribute('playsinline','');
+  video.setAttribute('muted','');
+  video.style.width = '100%';
+  video.style.borderRadius = '8px';
+  readerDiv.innerHTML = '';
+  readerDiv.appendChild(video);
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} }
+  }).then(function(stream){
+    video.srcObject = stream;
+    window._scanStream = stream;
+    scannerRunning = true;
+
+    var detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+
+    window._scanInterval = setInterval(function(){
+      if(!scannerRunning) return;
+      detector.detect(video).then(function(barcodes){
+        if(!barcodes.length) return;
+        var code = barcodes[0].rawValue;
+        if(!validateEAN13(code)) return;
+
+        if(code === lastScannedCode){
+          scanConfirmCount++;
+        } else {
+          lastScannedCode = code;
+          scanConfirmCount = 1;
+        }
+        var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
+        showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
+        if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
+          jslog('Native barcode confirmed: ' + code);
+          stopBarcodeScanner();
+          document.getElementById('manualBarcode').value = code;
+          lookupBarcode(code);
+        }
+      }).catch(function(){});
+    }, 150);
+  }).catch(function(err){
+    jslog('Camera error: ' + err, 'ERROR');
+    showStatus(getLang()==='lt' ? 'Nepavyko pasiekti kameros.' : 'Could not access camera.', 'warn');
+    readerDiv.style.display = 'none';
+    btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
+  });
+}
+
+function startHtml5Scanner(readerDiv, btn){
   html5QrCode = new Html5Qrcode('barcodeReader', {
     formatsToSupport: [
       Html5QrcodeSupportedFormats.EAN_13,
@@ -1361,11 +1422,9 @@ function startBarcodeScanner(){
   });
   html5QrCode.start(
     { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 350, height: 100 }, aspectRatio: 2.5, disableFlip: true },
+    { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
     function(decodedText){
-      if(!validateEAN13(decodedText)){
-        return;
-      }
+      if(!validateEAN13(decodedText)) return;
       if(decodedText === lastScannedCode){
         scanConfirmCount++;
       } else {
@@ -1375,68 +1434,18 @@ function startBarcodeScanner(){
       var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
       showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
       if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
-        jslog('Barcode confirmed (' + SCAN_CONFIRM_THRESHOLD + 'x): ' + decodedText);
+        jslog('Barcode confirmed: ' + decodedText);
         stopBarcodeScanner();
         document.getElementById('manualBarcode').value = decodedText;
         lookupBarcode(decodedText);
       }
     },
-    function(errorMessage){}
-  ).then(function(){
-    // Scanner started - apply zoom and sweep focus distances
-    function setupCamera(){
-      try {
-        var v = document.querySelector('#barcodeReader video');
-        if(!v || !v.srcObject) return;
-        var track = v.srcObject.getVideoTracks()[0];
-        if(!track) return;
-        var caps = track.getCapabilities ? track.getCapabilities() : {};
-        jslog('Camera caps: focus=' + JSON.stringify(caps.focusMode||'none') + ' dist=' + JSON.stringify(caps.focusDistance||'none') + ' zoom=' + JSON.stringify(caps.zoom||'none'));
-
-        // Apply 2x zoom for small barcodes
-        if(caps.zoom){
-          track.applyConstraints({advanced:[{zoom: 2.0}]}).then(function(){
-            jslog('Zoom set to 2x');
-          }).catch(function(){});
-        }
-
-        // If manual focus with focusDistance, sweep through distances
-        if(caps.focusMode && caps.focusMode.indexOf('manual') >= 0 && caps.focusDistance){
-          var min = caps.focusDistance.min || 0;
-          var max = caps.focusDistance.max || 1;
-          // Concentrate on close range (small barcodes held closer)
-          var closeMax = min + (max - min) * 0.5;
-          var distances = [];
-          var step = (closeMax - min) / 15;
-          for(var d = min; d <= closeMax; d += step) distances.push(d);
-          // Add a few far distances too
-          distances.push(min + (max-min)*0.6);
-          distances.push(min + (max-min)*0.75);
-          distances.push(min + (max-min)*0.9);
-          var idx = 0;
-          jslog('Focus sweep: ' + distances.length + ' steps, range ' + min.toFixed(2) + '-' + max.toFixed(2));
-          window._focusLocked = false;
-          window._focusTrack = track;
-          window._focusDists = distances;
-          window._focusIdx = 0;
-          window._focusInterval = setInterval(function(){
-            if(!scannerRunning){ clearInterval(window._focusInterval); return; }
-            if(window._focusLocked) return;
-            var dist = distances[window._focusIdx % distances.length];
-            track.applyConstraints({advanced:[{focusMode:'manual', focusDistance: dist}]}).catch(function(){});
-            window._focusIdx++;
-            // After full sweep, restart from beginning
-            if(window._focusIdx >= distances.length) window._focusIdx = 0;
-          }, 500);
-        }
-      } catch(e){ jslog('Camera setup error: ' + e); }
-    }
-    setTimeout(setupCamera, 800);
-  }).catch(function(err){
+    function(){}
+  ).catch(function(err){
     jslog('Camera error: ' + err, 'ERROR');
     readerDiv.style.display = 'none';
     btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
-    showStatus('Could not access camera. Try typing the barcode number.', 'warn');
+    showStatus(getLang()==='lt' ? 'Nepavyko pasiekti kameros.' : 'Could not access camera.', 'warn');
   });
   scannerRunning = true;
 }
@@ -1445,6 +1454,15 @@ function stopBarcodeScanner(){
   showStatus('', 'hide');
   var btn = document.getElementById('scanBarcodeBtn');
   btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
+
+  // Stop native scanner
+  if(window._scanInterval){ clearInterval(window._scanInterval); window._scanInterval = null; }
+  if(window._scanStream){
+    window._scanStream.getTracks().forEach(function(t){ t.stop(); });
+    window._scanStream = null;
+  }
+
+  // Stop html5-qrcode scanner
   if(html5QrCode && scannerRunning){
     html5QrCode.stop().then(function(){
       document.getElementById('barcodeReader').style.display = 'none';
