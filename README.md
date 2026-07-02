@@ -1,6 +1,36 @@
 # CalorieTracker
 
-Food calorie & macro tracker with Google OAuth. Track kcal, fat, protein, and carbs from food labels.
+Food calorie & macro tracker with barcode scanning, BLE kitchen scale support, and bilingual LT/EN interface. Built with Flask, deployed via Docker + Jenkins CI/CD behind a Cloudflare tunnel.
+
+## Features
+
+- Add products from food labels (kcal, fat, protein, carbs per serving)
+- Barcode scanning via camera — looks up nutrition data from the OpenFoodFacts database
+- BLE kitchen scale connection — weigh food and auto-calculate calories (tested with Arboleaf CK10A)
+- Pre-loaded Lithuanian food products (20 common items with nutrition data)
+- Log daily intake with gram amounts
+- Meal categorization (breakfast, lunch, dinner, snack)
+- Daily goals with progress bars
+- 7-day trend chart
+- 30-day history
+- Bilingual interface (Lithuanian / English) with cookie-persistent language toggle
+- Google Sign-In + email-based login
+- SQLite persistent storage
+
+## Browser Compatibility
+
+| Feature | Chrome (Android/Desktop) | Bluefy (iOS) | Safari (iOS) |
+|---|---|---|---|
+| Barcode scanning | Yes | Yes | Yes |
+| BLE kitchen scale | Yes | Yes (Web Bluetooth) | No |
+| Google Sign-In | Yes | No (use email login) | Yes |
+
+iOS does not support Web Bluetooth in Safari or Chrome. Use the [Bluefy](https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055) browser for BLE scale access on iPhone/iPad.
+
+## Supported Scales
+
+- **Arboleaf CK10A** — kitchen scale, BLE protocol reverse-engineered (weight at bytes 9-10, big-endian uint16, 0.1g resolution)
+- Other BLE scales with standard Weight Scale Service (0x181D) should also work
 
 ## Setup
 
@@ -13,7 +43,7 @@ Food calorie & macro tracker with Google OAuth. Track kcal, fat, protein, and ca
 
 ### 2. Jenkins Credentials
 
-Add these in Jenkins (Manage Jenkins → Credentials):
+Add these in Jenkins (Manage Jenkins > Credentials):
 
 | Credential ID | Type | Value |
 |---|---|---|
@@ -34,13 +64,13 @@ docker compose up --build
 # Opens at http://localhost:5555 (dev mode, no Google OAuth required)
 ```
 
-## Features
+## Tech Stack
 
-- Add products from food labels (kcal, fat, protein, carbs per serving)
-- Log daily intake with gram amounts
-- Meal categorization (breakfast, lunch, dinner, snack)
-- Daily goals with progress bars
-- 7-day trend chart
-- 30-day history
-- Google Sign-In authentication
-- SQLite persistent storage
+- **Backend:** Flask (Python 3.11)
+- **Database:** SQLite
+- **Barcode lookup:** OpenFoodFacts API v2
+- **Barcode scanning:** html5-qrcode (EAN-13/8, UPC-A/E with checksum validation)
+- **BLE:** Web Bluetooth API
+- **Auth:** Google OAuth (JS callback mode) + email login
+- **Deploy:** Docker, Jenkins CI/CD, Cloudflare Tunnel
+- **Hosting:** TrueNAS
