@@ -1050,19 +1050,27 @@ async function toggleScale(){
   try {
     scaleLog('Requesting BLE device...');
     // Request device - try standard weight service first, accept all
-    // Try with service filter first (more compatible), fall back to acceptAll
-    try {
-      bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{services: [WEIGHT_SCALE_SERVICE]}],
-        optionalServices: [0x180A].concat(CUSTOM_SERVICES)
-      });
-    } catch(filterErr) {
-      scaleLog('Trying broader scan...');
-      bleDevice = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
-      });
+    // Try multiple filter strategies for compatibility with different browsers
+    var strategies = [
+      // 1. Filter by known scale names
+      {filters: [{namePrefix: 'Arboleaf'}, {namePrefix: 'CK10'}, {namePrefix: 'Scale'}, {namePrefix: 'BLE'}], optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)},
+      // 2. Filter by weight scale service
+      {filters: [{services: [WEIGHT_SCALE_SERVICE]}], optionalServices: [0x180A].concat(CUSTOM_SERVICES)},
+      // 3. Accept all devices
+      {acceptAllDevices: true, optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)}
+    ];
+    var lastErr = null;
+    for(var si = 0; si < strategies.length; si++){
+      try {
+        scaleLog('Scan strategy ' + (si+1) + '/' + strategies.length + '...');
+        bleDevice = await navigator.bluetooth.requestDevice(strategies[si]);
+        break;
+      } catch(e) {
+        lastErr = e;
+        scaleLog('Strategy ' + (si+1) + ' failed: ' + (e.message || String(e)));
+      }
     }
+    if(!bleDevice) throw lastErr || new Error('No device found');
     scaleLog('Connecting to ' + (bleDevice.name || 'scale') + '...');
     bleDevice.addEventListener('gattserverdisconnected', onScaleDisconnected);
     if(!bleDevice.gatt){
@@ -1087,7 +1095,7 @@ async function toggleScale(){
       scaleLog('Connected but could not find weight data. Check docker logs for discovered services.');
     }
   } catch(err) {
-    scaleLog('Connection failed: ' + (err.message || err.toString || String(err)));
+    scaleLog('Connection failed: ' + (err.message || (typeof err === 'string' ? err : JSON.stringify(err))));
     scaleConnected = false;
   }
 }
