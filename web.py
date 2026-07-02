@@ -1050,27 +1050,10 @@ async function toggleScale(){
   try {
     scaleLog('Requesting BLE device...');
     // Request device - try standard weight service first, accept all
-    // Try multiple filter strategies for compatibility with different browsers
-    var strategies = [
-      // 1. Filter by known scale names
-      {filters: [{namePrefix: 'Arboleaf'}, {namePrefix: 'CK10'}, {namePrefix: 'Scale'}, {namePrefix: 'BLE'}], optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)},
-      // 2. Filter by weight scale service
-      {filters: [{services: [WEIGHT_SCALE_SERVICE]}], optionalServices: [0x180A].concat(CUSTOM_SERVICES)},
-      // 3. Accept all devices
-      {acceptAllDevices: true, optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)}
-    ];
-    var lastErr = null;
-    for(var si = 0; si < strategies.length; si++){
-      try {
-        scaleLog('Scan strategy ' + (si+1) + '/' + strategies.length + '...');
-        bleDevice = await navigator.bluetooth.requestDevice(strategies[si]);
-        break;
-      } catch(e) {
-        lastErr = e;
-        scaleLog('Strategy ' + (si+1) + ' failed: ' + (e.message || String(e)));
-      }
-    }
-    if(!bleDevice) throw lastErr || new Error('No device found');
+    bleDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
+    });
     scaleLog('Connecting to ' + (bleDevice.name || 'scale') + '...');
     bleDevice.addEventListener('gattserverdisconnected', onScaleDisconnected);
     if(!bleDevice.gatt){
@@ -1380,64 +1363,7 @@ function startBarcodeScanner(){
   scanConfirmCount = 0;
   jslog('Starting barcode scanner');
 
-  // Try native BarcodeDetector API first (Chrome Android - much better focus handling)
-  if('BarcodeDetector' in window){
-    jslog('Using native BarcodeDetector API');
-    startNativeScanner(readerDiv, btn);
-  } else {
-    jslog('Using html5-qrcode fallback');
-    startHtml5Scanner(readerDiv, btn);
-  }
-}
-
-function startNativeScanner(readerDiv, btn){
-  var video = document.createElement('video');
-  video.setAttribute('autoplay','');
-  video.setAttribute('playsinline','');
-  video.setAttribute('muted','');
-  video.style.width = '100%';
-  video.style.borderRadius = '8px';
-  readerDiv.innerHTML = '';
-  readerDiv.appendChild(video);
-
-  navigator.mediaDevices.getUserMedia({
-    video: { facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} }
-  }).then(function(stream){
-    video.srcObject = stream;
-    window._scanStream = stream;
-    scannerRunning = true;
-
-    var detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
-
-    window._scanInterval = setInterval(function(){
-      if(!scannerRunning) return;
-      detector.detect(video).then(function(barcodes){
-        if(!barcodes.length) return;
-        var code = barcodes[0].rawValue;
-        if(!validateEAN13(code)) return;
-
-        if(code === lastScannedCode){
-          scanConfirmCount++;
-        } else {
-          lastScannedCode = code;
-          scanConfirmCount = 1;
-        }
-        var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
-        showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
-        if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
-          jslog('Native barcode confirmed: ' + code);
-          stopBarcodeScanner();
-          document.getElementById('manualBarcode').value = code;
-          lookupBarcode(code);
-        }
-      }).catch(function(){});
-    }, 150);
-  }).catch(function(err){
-    jslog('Camera error: ' + err, 'ERROR');
-    showStatus(getLang()==='lt' ? 'Nepavyko pasiekti kameros.' : 'Could not access camera.', 'warn');
-    readerDiv.style.display = 'none';
-    btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
-  });
+  startHtml5Scanner(readerDiv, btn);
 }
 
 function startHtml5Scanner(readerDiv, btn){
@@ -1484,14 +1410,6 @@ function stopBarcodeScanner(){
   var btn = document.getElementById('scanBarcodeBtn');
   btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
 
-  // Stop native scanner
-  if(window._scanInterval){ clearInterval(window._scanInterval); window._scanInterval = null; }
-  if(window._scanStream){
-    window._scanStream.getTracks().forEach(function(t){ t.stop(); });
-    window._scanStream = null;
-  }
-
-  // Stop html5-qrcode scanner
   if(html5QrCode && scannerRunning){
     html5QrCode.stop().then(function(){
       document.getElementById('barcodeReader').style.display = 'none';
