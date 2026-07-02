@@ -631,7 +631,8 @@ var TRANSLATIONS = {
   'Cancel': 'Atšaukti',
   'Stop Scanner': 'Sustabdyti',
   'Kcal': 'Kcal',
-  'Quick Add': 'Greitas pridėjimas'
+  'Quick Add': 'Greitas pridėjimas',
+  'e.g. Chicken Breast': 'pvz. Vištienos krūtinėlė'
 };
 
 function getLang(){
@@ -788,22 +789,22 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-num kcal-color">{{ totals.kcal }}</div>
-    <div class="stat-lbl">kcal{% if goals %} / {{ goals.kcal|int }}{% endif %}</div>
+    <div class="stat-lbl"><span data-i18n="Kcal">kcal</span>{% if goals %} / {{ goals.kcal|int }}{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill kcal-fill" style="width:{{ [totals.kcal/goals.kcal*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
     <div class="stat-num fat-color">{{ totals.fat }}g</div>
-    <div class="stat-lbl" data-i18n-prefix="fat">fat{% if goals %} / {{ goals.fat|int }}g{% endif %}</div>
+    <div class="stat-lbl"><span data-i18n="Fat">fat</span>{% if goals %} / {{ goals.fat|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill fat-fill" style="width:{{ [totals.fat/goals.fat*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
     <div class="stat-num protein-color">{{ totals.protein }}g</div>
-    <div class="stat-lbl" data-i18n-prefix="protein">protein{% if goals %} / {{ goals.protein|int }}g{% endif %}</div>
+    <div class="stat-lbl"><span data-i18n="Protein">protein</span>{% if goals %} / {{ goals.protein|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill protein-fill" style="width:{{ [totals.protein/goals.protein*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
     <div class="stat-num carbs-color">{{ totals.carbs }}g</div>
-    <div class="stat-lbl" data-i18n-prefix="carbs">carbs{% if goals %} / {{ goals.carbs|int }}g{% endif %}</div>
+    <div class="stat-lbl"><span data-i18n="Carbs">carbs</span>{% if goals %} / {{ goals.carbs|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill carbs-fill" style="width:{{ [totals.carbs/goals.carbs*100, 100]|min }}%"></div></div>{% endif %}
   </div>
 </div>
@@ -852,7 +853,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 </div>
 {% else %}
 <div class="card" style="text-align:center;padding:2rem">
-  <p style="color:var(--muted);margin-bottom:1rem">No products yet. Add your first food product to start tracking.</p>
+  <p style="color:var(--muted);margin-bottom:1rem" data-i18n="No products yet. Add your first food product to start tracking.">No products yet. Add your first food product to start tracking.</p>
   <a href="/products" class="btn" style="display:inline-block" data-i18n="+ Add Products">+ Add Products</a>
 </div>
 {% endif %}
@@ -863,7 +864,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   <div class="card-title" data-i18n="Today's Log">Today\'s Log</div>
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th data-i18n="Food">Food</th><th data-i18n="Grams">Grams</th><th data-i18n="Meal">Meal</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
+    <tr><th data-i18n="Food">Food</th><th data-i18n="Grams">Grams</th><th data-i18n="Meal">Meal</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th></th></tr>
     {% for e in entries %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ e.name }}</td>
@@ -1176,7 +1177,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
-    <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast"></div>
+    <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast" data-i18n-ph="e.g. Chicken Breast"></div>
     <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
     <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
@@ -1384,7 +1385,7 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   {% if days %}
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th data-i18n="Date">Date</th><th data-i18n="Items">Items</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
+    <tr><th data-i18n="Date">Date</th><th data-i18n="Items">Items</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th></th></tr>
     {% for d in days %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ d.log_date }}</td>
@@ -1399,7 +1400,7 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   </table>
   </div>
   {% else %}
-  <p style="color:var(--muted);text-align:center;padding:2rem">" data-i18n="No entries yet. Start logging food on the dashboard.">No entries yet. Start logging food on the dashboard.</p>
+  <p style="color:var(--muted);text-align:center;padding:2rem" data-i18n="No entries yet. Start logging food on the dashboard.">No entries yet. Start logging food on the dashboard.</p>
   {% endif %}
 </div>
 </div></body></html>"""
