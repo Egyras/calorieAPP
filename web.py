@@ -1361,7 +1361,7 @@ function startBarcodeScanner(){
   });
   html5QrCode.start(
     { facingMode: 'environment' },
-    { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
+    { fps: 20, qrbox: { width: 350, height: 100 }, aspectRatio: 2.5, disableFlip: true },
     function(decodedText){
       if(!validateEAN13(decodedText)){
         return;
@@ -1395,8 +1395,8 @@ function startBarcodeScanner(){
 
         // Apply 2x zoom for small barcodes
         if(caps.zoom){
-          track.applyConstraints({advanced:[{zoom: 2.0}]}).then(function(){
-            jslog('Zoom set to 2x');
+          track.applyConstraints({advanced:[{zoom: 3.0}]}).then(function(){
+            jslog('Zoom set to 3x');
           }).catch(function(){});
         }
 
@@ -1404,10 +1404,15 @@ function startBarcodeScanner(){
         if(caps.focusMode && caps.focusMode.indexOf('manual') >= 0 && caps.focusDistance){
           var min = caps.focusDistance.min || 0;
           var max = caps.focusDistance.max || 1;
-          // Focus distances for typical barcode scanning (15-40cm)
+          // Concentrate on close range (small barcodes held closer)
+          var closeMax = min + (max - min) * 0.5;
           var distances = [];
-          var step = (max - min) / 20;
-          for(var d = min; d <= max; d += step) distances.push(d);
+          var step = (closeMax - min) / 15;
+          for(var d = min; d <= closeMax; d += step) distances.push(d);
+          // Add a few far distances too
+          distances.push(min + (max-min)*0.6);
+          distances.push(min + (max-min)*0.75);
+          distances.push(min + (max-min)*0.9);
           var idx = 0;
           jslog('Focus sweep: ' + distances.length + ' steps, range ' + min.toFixed(2) + '-' + max.toFixed(2));
           window._focusInterval = setInterval(function(){
@@ -1415,7 +1420,7 @@ function startBarcodeScanner(){
             var dist = distances[idx % distances.length];
             track.applyConstraints({advanced:[{focusMode:'manual', focusDistance: dist}]}).catch(function(){});
             idx++;
-          }, 400);
+          }, 300);
         }
       } catch(e){ jslog('Camera setup error: ' + e); }
     }
