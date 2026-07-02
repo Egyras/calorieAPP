@@ -1391,9 +1391,37 @@ function startBarcodeScanner(){
     showStatus('Could not access camera. Try typing the barcode number.', 'warn');
   });
   scannerRunning = true;
+
+  // Request continuous autofocus and high resolution
+  setTimeout(function(){
+    try {
+      var videoElem = document.querySelector('#barcodeReader video');
+      if(videoElem && videoElem.srcObject){
+        var track = videoElem.srcObject.getVideoTracks()[0];
+        var caps = track.getCapabilities ? track.getCapabilities() : {};
+        var constraints = {};
+        if(caps.focusMode && caps.focusMode.indexOf('continuous') >= 0){
+          constraints.focusMode = 'continuous';
+        }
+        if(caps.zoom){
+          constraints.zoom = Math.min(caps.zoom.max, 2.0);
+        }
+        if(caps.width){
+          constraints.width = {ideal: 1920};
+          constraints.height = {ideal: 1080};
+        }
+        if(Object.keys(constraints).length > 0){
+          track.applyConstraints({advanced: [constraints]}).then(function(){
+            jslog('Camera constraints applied: ' + JSON.stringify(constraints));
+          }).catch(function(e){ jslog('Constraint error: ' + e); });
+        }
+      }
+    } catch(e){ jslog('Focus setup error: ' + e); }
+  }, 500);
 }
 
 function stopBarcodeScanner(){
+  showStatus('', 'hide');
   var btn = document.getElementById('scanBarcodeBtn');
   btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
   if(html5QrCode && scannerRunning){
@@ -1409,6 +1437,7 @@ function stopBarcodeScanner(){
 }
 
 function showStatus(msg, type){
+  if(type === 'hide'){ document.getElementById('scanStatus').className = 'scan-status'; return; }
   var el = document.getElementById('scanStatus');
   var txt = document.getElementById('scanText');
   el.classList.add('active');
