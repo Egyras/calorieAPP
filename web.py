@@ -1090,39 +1090,66 @@ async function runOCR(){
 }
 
 function parseNutritionLabel(text){
-  // Normalize: fix common OCR errors, normalize whitespace
-  var allText = text.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
-  // Also try line-by-line for structured labels
-  var lines = text.split(String.fromCharCode(10)).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
+  // Fix common OCR character misreads in numeric contexts
+  function fixOcrText(t){
+    // Replace common letter-to-digit confusions near numbers/units
+    t = t.replace(/([0-9])B/g, '$16');  // 2B0 -> 260
+    t = t.replace(/B([0-9])/g, '6$1');  // B0 -> 60
+    t = t.replace(/([0-9])O([0-9])/g, '$10$2');  // 1O0 -> 100
+    t = t.replace(/([0-9])l([0-9])/g, '$11$2');  // 3l1 -> 311
+    t = t.replace(/([0-9])I([0-9])/g, '$11$2');  // 3I1 -> 311
+    t = t.replace(/([0-9])S([0-9])/g, '$15$2');  // 2S0 -> 250
+    // Fix spaces that break decimal numbers: "3 1" near "g" -> "3.1"
+    t = t.replace(/(\d+)\s+(\d)\s*g/gi, '$1.$2 g');
+    // Fix "319" that should be "3.19" or "3,1" (3+ digits with no decimal before 'g')
+    return t;
+  }
 
-  jslog('parseNutritionLabel lines: ' + JSON.stringify(lines));
+  var fixedText = fixOcrText(text);
+  jslog('OCR after fixes: ' + fixedText.substring(0, 500));
+  
+  // Normalize: fix common OCR errors, normalize whitespace
+  var allText = fixedText.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
+  // Also try line-by-line for structured labels
+  var lines = fixedText.split(String.fromCharCode(10)).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
 
   // Helper: find number near a keyword in any line
-  function findValue(keywords){
-    // First try: keyword followed by number on same line
+  function findValue(keywords, isEnergy){
     for(var i=0; i<lines.length; i++){
       var line = lines[i];
       for(var k=0; k<keywords.length; k++){
         if(line.toLowerCase().indexOf(keywords[k]) >= 0){
-          // Get all numbers from this line
           var nums = line.match(/(\d+[\.,]\d+|\d+)/g);
           if(nums && nums.length > 0){
-            // For energy lines with both kJ and kcal, prefer the kcal number
-            var isEnergy = keywords[k].indexOf('energ') >= 0 || keywords[k].indexOf('calor') >= 0 || keywords[k] === 'kcal' || keywords[k] === 'kkal';
             if(isEnergy){
-              var parsed = nums.map(function(n){ return parseFloat(n.replace(',','.')); });
-              // If line has both kJ and kcal, kcal is the smaller one (typically 2-4x less than kJ)
+              var parsed = nums.map(function(n){ return parseFloat(n.replace(',','.')); }).filter(function(v){ return v > 0 && !isNaN(v); });
+              jslog('Energy line: ' + line + ' -> parsed nums: ' + JSON.stringify(parsed));
               if(parsed.length >= 2){
                 parsed.sort(function(a,b){ return a - b; });
-                // The smaller value is kcal
-                return parsed[0];
+                // kcal is the smaller value (1 kcal = 4.184 kJ)
+                // But validate: if smallest < 1, skip it
+                var kcal = parsed[0];
+                if(kcal < 1 && parsed.length > 1) kcal = parsed[1];
+                return Math.round(kcal);
               }
-              return parsed[0];
+              if(parsed.length === 1){
+                // Single number - if > 400 it might be kJ, convert
+                if(parsed[0] > 400) return Math.round(parsed[0] / 4.184);
+                return Math.round(parsed[0]);
+              }
             }
             // For macros, take the first number after the keyword
             var afterKeyword = line.substring(line.toLowerCase().indexOf(keywords[k]) + keywords[k].length);
             var afterNum = afterKeyword.match(/(\d+[\.,]\d+|\d+)/);
-            if(afterNum) return parseFloat(afterNum[1].replace(',','.'));
+            if(afterNum){
+              var val = parseFloat(afterNum[1].replace(',','.'));
+              // Sanity: macros per 100g should be 0-100
+              if(val > 100){
+                jslog('Suspicious value ' + val + ' for ' + keywords[k] + ', trying /10: ' + (val/10));
+                val = Math.round(val/10 * 10) / 10;
+              }
+              return val;
+            }
             return parseFloat(nums[0].replace(',','.'));
           }
         }
@@ -1132,27 +1159,31 @@ function parseNutritionLabel(text){
     for(var k=0; k<keywords.length; k++){
       var re = new RegExp(keywords[k] + '[^\\d]{0,20}(\\d+[\\.,]?\\d*)', 'i');
       var m = allText.match(re);
-      if(m) return parseFloat(m[1].replace(',','.'));
+      if(m){
+        var val = parseFloat(m[1].replace(',','.'));
+        if(!isEnergy && val > 100) val = Math.round(val/10 * 10) / 10;
+        return val;
+      }
     }
     return null;
   }
 
-  // Energy / Calories (multiple languages)
-  var kcalVal = findValue(['kcal', 'kkal', 'energi', 'energy', 'calories', 'kalorij', 'energin', 'energ']);
+  // Energy / Calories
+  var kcalVal = findValue(['kcal', 'kkal', 'energi', 'energy', 'calories', 'kalorij', 'energin', 'energ'], true);
 
-  // Fat (multiple languages)
-  var fatVal = findValue(['fat', 'riebal', 'fedt', 'fett', 'lipid', 'grassi', 'grasa', 'vet', 'tuk']);
+  // Fat
+  var fatVal = findValue(['fat', 'riebal', 'fedt', 'fett', 'lipid', 'grassi', 'grasa', 'vet', 'tuk'], false);
 
   // Protein
-  var proteinVal = findValue(['protein', 'baltym', 'protei', 'eiwit', 'blanc', 'belok']);
+  var proteinVal = findValue(['protein', 'baltym', 'protei', 'eiwit', 'blanc', 'belok'], false);
 
   // Carbs
-  var carbsVal = findValue(['carbohydrate', 'angliavandeniai', 'kolhydrat', 'carboidrat', 'kohlenhydrat', 'carb', 'hidrat', 'glucid', 'sacharid', 'koolhydra']);
+  var carbsVal = findValue(['carbohydrate', 'angliavandeniai', 'angliavandeni', 'kolhydrat', 'carboidrat', 'kohlenhydrat', 'carb', 'hidrat', 'glucid', 'sacharid', 'koolhydra'], false);
 
   // Fill form
   jslog('Extracted values - kcal:' + kcalVal + ' fat:' + fatVal + ' protein:' + proteinVal + ' carbs:' + carbsVal);
   var filled = [];
-  if(kcalVal !== null){
+  if(kcalVal !== null && kcalVal > 0){
     document.getElementById('pKcal').value = kcalVal;
     filled.push('kcal: ' + kcalVal);
   }
