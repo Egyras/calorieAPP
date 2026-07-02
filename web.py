@@ -1222,6 +1222,36 @@ jslog('Barcode scanner JS loaded');
 </script>
 </div></body></html>"""
 
+
+HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>History — CalorieTracker</title>""" + STYLE + """</head><body>
+""" + NAV.replace("active=='history'", "True") + """
+<div class="container">
+<div class="card">
+  <div class="card-title">Daily History (Last 30 Days)</div>
+  {% if days %}
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <tr><th>Date</th><th>Items</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
+    {% for d in days %}
+    <tr>
+      <td style="font-weight:500;color:var(--text-strong)">{{ d.log_date }}</td>
+      <td>{{ d.items }}</td>
+      <td class="kcal-color">{{ d.kcal|int }}{% if goals %} <span style="color:var(--muted);font-size:11px">/ {{ goals.kcal|int }}</span>{% endif %}</td>
+      <td class="fat-color">{{ d.fat }}g</td>
+      <td class="protein-color">{{ d.protein }}g</td>
+      <td class="carbs-color">{{ d.carbs }}g</td>
+      <td><a href="/?date={{ d.log_date }}" class="btn-ghost btn-sm" style="display:inline-block;text-decoration:none">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);text-align:center;padding:2rem">No entries yet. Start logging food on the dashboard.</p>
+  {% endif %}
+</div>
+</div></body></html>"""
+
 # -- Run --
 
 if __name__ == "__main__":
