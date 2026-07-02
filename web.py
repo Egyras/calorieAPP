@@ -95,6 +95,42 @@ def current_user():
     db = get_db()
     return db.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
 
+
+def ensure_default_products(db, user_id):
+    """Add default Lithuanian food products if missing."""
+    existing_names = set(r[0] for r in db.execute("SELECT name FROM products WHERE user_id=?", (user_id,)).fetchall())
+    defaults = [
+        ("Pomidorai", 18, 0.2, 0.9, 3.9, 100),
+        ("Agurkai", 15, 0.1, 0.7, 3.6, 100),
+        ("Bulves (virtos)", 77, 0.1, 2.0, 17.0, 100),
+        ("Vistienos krutinele", 165, 3.6, 31.0, 0.0, 100),
+        ("Kiausienis (virtas)", 155, 11.0, 13.0, 1.1, 100),
+        ("Varske 9%", 159, 9.0, 16.5, 3.0, 100),
+        ("Grietine 20%", 204, 20.0, 2.8, 3.6, 100),
+        ("Juoda duona", 216, 1.3, 6.8, 42.0, 100),
+        ("Ryziai (virti)", 130, 0.3, 2.7, 28.0, 100),
+        ("Grikiai (virti)", 92, 0.6, 3.4, 19.9, 100),
+        ("Bananai", 89, 0.3, 1.1, 23.0, 100),
+        ("Obuoliai", 52, 0.2, 0.3, 14.0, 100),
+        ("Pienas 2.5%", 52, 2.5, 3.2, 4.7, 100),
+        ("Lasiosos file", 208, 13.0, 20.0, 0.0, 100),
+        ("Avizine kose", 68, 1.4, 2.4, 12.0, 100),
+        ("Sviestas 82%", 717, 81.0, 0.9, 0.1, 100),
+        ("Sviezias svogunas", 40, 0.1, 1.1, 9.3, 100),
+        ("Morkos", 41, 0.2, 0.9, 10.0, 100),
+        ("Kiaulienos sonine", 458, 45.0, 12.0, 0.0, 100),
+        ("Jogurtas naturalus", 59, 1.5, 10.0, 3.6, 100),
+    ]
+    added = 0
+    for name, kcal, fat, protein, carbs, per in defaults:
+        if name not in existing_names:
+            db.execute(
+                "INSERT INTO products (user_id, name, kcal, fat, protein, carbs, per_grams) VALUES (?,?,?,?,?,?,?)",
+                (user_id, name, kcal, fat, protein, carbs, per)
+            )
+            added += 1
+    print(f"[DEFAULTS] user {user_id}: {len(existing_names)} existing, added {added} defaults", flush=True)
+
 @app.route("/login")
 def login():
     if not GOOGLE_CLIENT_ID:
@@ -127,9 +163,13 @@ def google_auth():
             db.execute("INSERT INTO daily_goals (user_id) VALUES (?)", (cur.lastrowid,))
             ensure_default_products(db, cur.lastrowid)
         db.commit()
+        if request.is_json:
+            return jsonify({"ok": True})
         return redirect(url_for("index"))
     except Exception as e:
         print(f"[auth] {e}", file=sys.stderr)
+        if request.is_json:
+            return jsonify({"ok": False, "error": str(e)}), 401
         flash(f"Authentication failed: {e}")
         return redirect(url_for("login"))
 
@@ -229,6 +269,7 @@ def js_log():
     level = data.get("level", "INFO")
     print(f"[JS {level}] {msg}", flush=True)
     return "ok", 200
+
 
 @app.route("/api/barcode/<code>")
 @login_required
@@ -640,7 +681,8 @@ var TRANSLATIONS = {
   'Stop Scanner': 'Sustabdyti',
   'Kcal': 'Kcal',
   'Quick Add': 'Greitas pridėjimas',
-  'e.g. Chicken Breast': 'pvz. Vištienos krūtinėlė'
+  'e.g. Chicken Breast': 'pvz. Vištienos krūtinėlė',
+  'Load default products': 'Įkelti standartinius produktus'
 };
 
 function getLang(){
@@ -741,10 +783,20 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
   <div class="login-card">
     <div id="g_id_onload"
          data-client_id="{{ google_client_id }}"
-         data-login_uri="/auth/google"
+         data-callback="handleCredentialResponse"
          data-auto_prompt="false"></div>
     <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="pill" data-width="300"></div>
   </div>
+  <script>
+  function handleCredentialResponse(response) {
+    fetch("/auth/google", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({credential: response.credential}),
+      credentials: "same-origin"
+    }).then(function(r){ window.location.href = "/"; });
+  }
+  </script>
 </div>
 </body></html>"""
 
@@ -1174,11 +1226,11 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <!-- BARCODE SCANNER -->
   <div class="scan-area">
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button type="button" class="scan-btn" style="flex:1;min-width:140px;" id="scanBarcodeBtn" onclick="startBarcodeScanner()" data-i18n="Scan Barcode">📊 Scan Barcode</button>
-      <div style="flex:1;min-width:140px;display:flex;gap:4px;">
-        <input type="text" id="manualBarcode" placeholder="Or type barcode..." data-i18n-ph="Or type barcode..." style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
-        <button type="button" class="btn btn-sm" onclick="lookupBarcode(document.getElementById('manualBarcode').value)" style="white-space:nowrap;" data-i18n="Look up">Look up</button>
-      </div>
+      <button type="button" class="scan-btn" style="flex:1 1 auto;" id="scanBarcodeBtn" onclick="startBarcodeScanner()" data-i18n="Scan Barcode">📊 Scan Barcode</button>
+    </div>
+    <div style="display:flex;gap:4px;margin-top:8px;">
+      <input type="text" id="manualBarcode" placeholder="Or type barcode..." data-i18n-ph="Or type barcode..." style="flex:1;min-width:0;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
+      <button type="button" class="btn btn-sm" onclick="lookupBarcode(document.getElementById('manualBarcode').value)" style="white-space:nowrap;flex-shrink:0;" data-i18n="Look up">Look up</button>
     </div>
     <div id="barcodeReader" style="display:none;margin-top:8px;"></div>
     <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
