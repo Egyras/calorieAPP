@@ -3,11 +3,12 @@
 import os, sys, json, sqlite3, functools
 from datetime import datetime, date, timedelta
 from flask import Flask, render_template_string, request, g, jsonify, redirect, url_for, session, flash
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-abc123")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 # Google OAuth config
@@ -142,6 +143,7 @@ def dev_auth():
     user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if user:
         session["user_id"] = user["id"]
+        ensure_default_products(db, user["id"])
     else:
         cur = db.execute("INSERT INTO users (email, name) VALUES (?,?)", (email, email.split("@")[0]))
         session["user_id"] = cur.lastrowid
