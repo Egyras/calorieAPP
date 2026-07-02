@@ -874,15 +874,11 @@ function jslog(msg, level){
   level = level || 'INFO';
   try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
 }
-jslog('Products page loaded, loading Tesseract.js...');
-</script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
-  onload="jslog('Tesseract.js script loaded OK');"
-  onerror="jslog('Tesseract.js script FAILED to load','ERROR');"></script>
-<script>
-jslog('Tesseract global exists: ' + (typeof Tesseract !== 'undefined'));
+jslog('Products page JS init');
+
 var cameraStream = null;
 var ocrWorker = null;
+var tesseractReady = false;
 
 // Resize large camera images so OCR doesn't choke on 12MP photos
 function resizeForOCR(dataUrl, maxW, callback){
@@ -994,14 +990,27 @@ async function runOCR(){
   status.classList.add('active');
   document.getElementById('scanActions').style.display = 'none';
 
-  // Check if Tesseract loaded
+  // Wait for Tesseract to load (it loads async now)
   if(typeof Tesseract === 'undefined'){
-    jslog('Tesseract is UNDEFINED - script did not load', 'ERROR');
-    statusText.textContent = 'OCR library not loaded. Enter values manually.';
-    statusText.style.color = '#f59e0b';
-    var spinner = status.querySelector('.scan-spinner');
-    if(spinner) spinner.style.display = 'none';
-    document.getElementById('scanActions').style.display = 'flex';
+    statusText.textContent = 'Loading OCR library...';
+    jslog('Waiting for Tesseract.js to load...');
+    var waitCount = 0;
+    var waitInterval = setInterval(function(){
+      waitCount++;
+      if(typeof Tesseract !== 'undefined'){
+        clearInterval(waitInterval);
+        jslog('Tesseract.js now available after waiting');
+        runOCR();
+      } else if(waitCount > 30){
+        clearInterval(waitInterval);
+        jslog('Tesseract.js failed to load after 15s', 'ERROR');
+        statusText.textContent = 'OCR library failed to load. Enter values manually.';
+        statusText.style.color = '#f59e0b';
+        var spinner = status.querySelector('.scan-spinner');
+        if(spinner) spinner.style.display = 'none';
+        document.getElementById('scanActions').style.display = 'flex';
+      }
+    }, 500);
     return;
   }
 
@@ -1151,6 +1160,22 @@ function parseNutritionLabel(text){
 function parseNum(s){
   return parseFloat(s.replace(',', '.')) || 0;
 }
+
+jslog('All JS functions defined OK');
+</script>
+<script>
+// Load Tesseract AFTER all functions are defined so handleFile always exists
+var tScript = document.createElement('script');
+tScript.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+tScript.onload = function(){
+  tesseractReady = true;
+  jslog('Tesseract.js loaded and ready');
+};
+tScript.onerror = function(){
+  jslog('Tesseract.js FAILED to load from CDN', 'ERROR');
+};
+document.head.appendChild(tScript);
+jslog('Tesseract.js loading started (async)');
 </script>
 </div></body></html>"""
 
