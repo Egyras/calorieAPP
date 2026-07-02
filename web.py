@@ -1390,8 +1390,8 @@ function startHtml5Scanner(readerDiv, btn){
     ]
   });
   html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 350, height: 150 }, aspectRatio: 1.5, disableFlip: true },
+    { facingMode: { exact: 'environment' }, advanced: [{ width: { min: 1280, ideal: 1920 } }, { height: { min: 720, ideal: 1080 } }] },
+    { fps: 20, qrbox: { width: 350, height: 150 }, aspectRatio: 1.5, disableFlip: true, experimentalFeatures: { useBarCodeDetectorIfSupported: false } },
     function(decodedText){
       if(!validateEAN13(decodedText)) return;
       if(decodedText === lastScannedCode){
