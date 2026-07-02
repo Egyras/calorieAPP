@@ -1323,6 +1323,16 @@ function jslog(msg, level){
   try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
 }
 
+function validateEAN13(code){
+  if(!code || code.length !== 13 || !/^\d{13}$/.test(code)) return code.length === 8;
+  var sum = 0;
+  for(var i = 0; i < 12; i++){
+    sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  var check = (10 - (sum % 10)) % 10;
+  return check === parseInt(code[12]);
+}
+
 function startBarcodeScanner(){
   var readerDiv = document.getElementById('barcodeReader');
   var btn = document.getElementById('scanBarcodeBtn');
@@ -1336,13 +1346,27 @@ function startBarcodeScanner(){
   btn.textContent = 'Stop Scanner';
   jslog('Starting barcode scanner');
 
-  html5QrCode = new Html5Qrcode('barcodeReader');
+  html5QrCode = new Html5Qrcode('barcodeReader', {
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E
+    ]
+  });
   html5QrCode.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.5 },
+    { fps: 5, qrbox: { width: 280, height: 160 }, aspectRatio: 1.5, disableFlip: false },
     function(decodedText){
       jslog('Barcode detected: ' + decodedText);
+      if(!validateEAN13(decodedText)){
+        jslog('Invalid EAN checksum, ignoring: ' + decodedText, 'WARN');
+        return;
+      }
       stopBarcodeScanner();
+      document.getElementById('manualBarcode').value = decodedText;
+      var msg = (getLang()==='lt' ? 'Aptiktas kodas: ' : 'Detected: ') + decodedText;
+      showStatus(msg, 'ok');
       lookupBarcode(decodedText);
     },
     function(errorMessage){
