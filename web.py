@@ -226,28 +226,36 @@ def js_log():
 @login_required
 def barcode_lookup(code):
     """Look up product nutrition from OpenFoodFacts by barcode."""
-    import urllib.request
-    url = f"https://world.openfoodfacts.net/api/v2/product/{code}.json?fields=product_name,brands,nutriments"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "CalorieTracker/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-        if data.get("status") != 1:
-            return jsonify({"found": False}), 200
-        p = data.get("product", {})
-        n = p.get("nutriments", {})
-        return jsonify({
-            "found": True,
-            "name": p.get("product_name", ""),
-            "brand": p.get("brands", ""),
-            "kcal": round(n.get("energy-kcal_100g", 0)),
-            "fat": n.get("fat_100g", 0),
-            "protein": n.get("proteins_100g", 0),
-            "carbs": n.get("carbohydrates_100g", 0),
-        })
-    except Exception as e:
-        print(f"[BARCODE] Error looking up {code}: {e}", flush=True)
-        return jsonify({"found": False, "error": str(e)}), 200
+    import requests as req_lib
+    urls = [
+        f"https://world.openfoodfacts.org/api/v2/product/{code}.json?fields=product_name,brands,nutriments",
+        f"https://world.openfoodfacts.net/api/v2/product/{code}.json?fields=product_name,brands,nutriments",
+    ]
+    for url in urls:
+        try:
+            print(f"[BARCODE] Trying: {url}", flush=True)
+            resp = req_lib.get(url, headers={"User-Agent": "CalorieTracker/1.0 (ctfc54596@gmail.com)"}, timeout=10)
+            print(f"[BARCODE] Status: {resp.status_code}", flush=True)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            if data.get("status") != 1:
+                return jsonify({"found": False}), 200
+            p = data.get("product", {})
+            n = p.get("nutriments", {})
+            return jsonify({
+                "found": True,
+                "name": p.get("product_name", ""),
+                "brand": p.get("brands", ""),
+                "kcal": round(n.get("energy-kcal_100g", 0)),
+                "fat": n.get("fat_100g", 0),
+                "protein": n.get("proteins_100g", 0),
+                "carbs": n.get("carbohydrates_100g", 0),
+            })
+        except Exception as e:
+            print(f"[BARCODE] Error with {url}: {e}", flush=True)
+            continue
+    return jsonify({"found": False, "error": "Could not reach OpenFoodFacts"}), 200
 
 
 @app.route("/api/products", methods=["POST"])
