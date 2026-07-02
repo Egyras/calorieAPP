@@ -758,9 +758,14 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 
   <!-- CAMERA SCAN -->
   <div class="scan-area">
-    <label class="scan-btn" id="scanBtn">📷 Scan Nutrition Label
-      <input type="file" accept="image/*" capture="environment" onchange="handleFile(this)" style="display:none" id="scanInput">
-    </label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <label class="scan-btn" style="flex:1;min-width:140px;" id="scanBtnCamera">📷 Take Photo
+        <input type="file" accept="image/*" capture="environment" onchange="handleFile(this)" style="display:none" id="scanInputCamera">
+      </label>
+      <label class="scan-btn" style="flex:1;min-width:140px;" id="scanBtnAlbum">🖼️ From Album
+        <input type="file" accept="image/*" onchange="handleFile(this)" style="display:none" id="scanInputAlbum">
+      </label>
+    </div>
     <div class="scan-preview" id="scanPreview">
       <video id="cameraVideo" autoplay playsinline></video>
       <canvas id="scanCanvas" style="display:none"></canvas>
@@ -854,7 +859,13 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 </script>
 
 <!-- Tesseract.js OCR -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>var tesseractLoaded = false;</script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
+  onload="tesseractLoaded=true; console.log('Tesseract.js loaded OK');"
+  onerror="console.error('Tesseract.js failed to load');
+    document.getElementById('scanStatus').classList.add('active');
+    document.getElementById('scanText').textContent='OCR library failed to load. Enter values manually.';
+    document.getElementById('scanText').style.color='#f59e0b';"></script>
 <script>
 var cameraStream = null;
 var ocrWorker = null;
@@ -878,7 +889,8 @@ function showImage(src){
   img.src = src;
   preview.style.display = 'block';
   document.getElementById('cameraControls').classList.remove('active');
-  document.getElementById('scanBtn').style.display = 'none';
+  document.getElementById('scanBtnCamera').style.display = 'none';
+  document.getElementById('scanBtnAlbum').style.display = 'none';
   // Auto-run OCR immediately
   runOCR();
 }
@@ -913,8 +925,10 @@ function resetScan(){
   document.getElementById('scanStatus').style.borderColor = '';
   var spinner = document.getElementById('scanStatus').querySelector('.scan-spinner');
   if(spinner) spinner.style.display = '';
-  document.getElementById('scanBtn').style.display = '';
-  document.getElementById('scanInput').value = '';
+  document.getElementById('scanBtnCamera').style.display = '';
+  document.getElementById('scanBtnAlbum').style.display = '';
+  document.getElementById('scanInputCamera').value = '';
+  document.getElementById('scanInputAlbum').value = '';
 }
 
 async function runOCR(){
@@ -924,6 +938,16 @@ async function runOCR(){
   var statusText = document.getElementById('scanText');
   status.classList.add('active');
   document.getElementById('scanActions').style.display = 'none';
+
+  // Check if Tesseract loaded
+  if(typeof Tesseract === 'undefined'){
+    statusText.textContent = 'OCR library not loaded. Check internet connection. Enter values manually.';
+    statusText.style.color = '#f59e0b';
+    var spinner = status.querySelector('.scan-spinner');
+    if(spinner) spinner.style.display = 'none';
+    document.getElementById('scanActions').style.display = 'flex';
+    return;
+  }
 
   try {
     statusText.textContent = 'Loading OCR engine (first time may take 10-20s)...';
