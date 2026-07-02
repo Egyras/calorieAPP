@@ -1088,13 +1088,17 @@ function parseNutritionLabel(text){
           // Get all numbers from this line
           var nums = line.match(/(\d+[\.,]\d+|\d+)/g);
           if(nums && nums.length > 0){
-            // For energy lines with both kJ and kcal, prefer the smaller number (kcal)
-            if(keywords[k].indexOf('energ') >= 0 || keywords[k].indexOf('calor') >= 0){
+            // For energy lines with both kJ and kcal, prefer the kcal number
+            var isEnergy = keywords[k].indexOf('energ') >= 0 || keywords[k].indexOf('calor') >= 0 || keywords[k] === 'kcal' || keywords[k] === 'kkal';
+            if(isEnergy){
               var parsed = nums.map(function(n){ return parseFloat(n.replace(',','.')); });
-              // kcal is typically < 1000 for per-100g, kJ is typically > 100
-              var kcalCandidates = parsed.filter(function(v){ return v < 1000; });
-              if(kcalCandidates.length > 0) return kcalCandidates[kcalCandidates.length - 1];
-              return parsed[parsed.length - 1];
+              // If line has both kJ and kcal, kcal is the smaller one (typically 2-4x less than kJ)
+              if(parsed.length >= 2){
+                parsed.sort(function(a,b){ return a - b; });
+                // The smaller value is kcal
+                return parsed[0];
+              }
+              return parsed[0];
             }
             // For macros, take the first number after the keyword
             var afterKeyword = line.substring(line.toLowerCase().indexOf(keywords[k]) + keywords[k].length);
