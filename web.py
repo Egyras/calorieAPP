@@ -854,9 +854,10 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 </script>
 
 <!-- Tesseract.js OCR -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 var cameraStream = null;
+var ocrWorker = null;
 
 function handleFile(input){
   var file = input.files[0];
@@ -915,74 +916,120 @@ function resetScan(){
   document.getElementById('scanInput').value = '';
 }
 
-function runOCR(){
+async function runOCR(){
   var img = document.getElementById('scanImg');
   if(!img.src) return;
   var status = document.getElementById('scanStatus');
   var statusText = document.getElementById('scanText');
   status.classList.add('active');
-  statusText.textContent = 'Loading OCR engine...';
   document.getElementById('scanActions').style.display = 'none';
 
-  Tesseract.recognize(img.src, 'eng+lit', {
-    logger: function(m){
-      if(m.status === 'recognizing text'){
-        statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
-      }
+  try {
+    statusText.textContent = 'Loading OCR engine (first time may take 10-20s)...';
+
+    if(!ocrWorker){
+      ocrWorker = await Tesseract.createWorker('eng', 1, {
+        logger: function(m){
+          if(m.status === 'loading tesseract core'){
+            statusText.textContent = 'Loading OCR core...';
+          } else if(m.status === 'loading language traineddata'){
+            statusText.textContent = 'Loading language data...';
+          } else if(m.status === 'recognizing text'){
+            statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
+          }
+        }
+      });
+    } else {
+      statusText.textContent = 'Reading label...';
     }
-  }).then(function(result){
-    statusText.textContent = 'Extracting values...';
+
+    var result = await ocrWorker.recognize(img.src);
     var text = result.data.text;
-    console.log('OCR text:', text);
+    console.log('OCR raw text:', text);
+    statusText.textContent = 'Extracting values...';
     parseNutritionLabel(text);
     status.classList.remove('active');
-  }).catch(function(err){
-    statusText.textContent = 'OCR failed: ' + err.message;
+  } catch(err) {
+    statusText.textContent = 'OCR failed: ' + (err.message || err);
     console.error('OCR error:', err);
     document.getElementById('scanActions').style.display = 'flex';
-  });
+    ocrWorker = null;
+  }
 }
 
 function parseNutritionLabel(text){
-  // Normalize text
-  var t = text.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
-  var lines = text.split(/\n/);
-  var allText = lines.join(' ');
+  // Normalize: fix common OCR errors, normalize whitespace
+  var allText = text.replace(/[|]/g, ' ').replace(/\s+/g, ' ');
+  // Also try line-by-line for structured labels
+  var lines = text.split(/\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l; });
 
-  // Common patterns on nutrition labels (handles various label formats)
-  // Energy / Calories
-  var kcalMatch = allText.match(/(?:energy|energi|energ|calories|kalorij|energin)[^\d]*(\d+[\.,]?\d*)\s*(?:kcal|kkal)/i)
-    || allText.match(/(\d+[\.,]?\d*)\s*(?:kcal|kkal)/i);
+  console.log('Parsing lines:', lines);
 
-  // Fat
-  var fatMatch = allText.match(/(?:fat|riebal|fedt|fett|lipid|grassi|grasa)[^\d]*(\d+[\.,]?\d*)\s*g/i)
-    || allText.match(/(?:fat|riebal)[^\d]*(\d+[\.,]?\d*)/i);
+  // Helper: find number near a keyword in any line
+  function findValue(keywords){
+    // First try: keyword followed by number on same line
+    for(var i=0; i<lines.length; i++){
+      var line = lines[i];
+      for(var k=0; k<keywords.length; k++){
+        if(line.toLowerCase().indexOf(keywords[k]) >= 0){
+          // Get all numbers from this line
+          var nums = line.match(/(\d+[\.,]\d+|\d+)/g);
+          if(nums && nums.length > 0){
+            // For energy lines with both kJ and kcal, prefer the smaller number (kcal)
+            if(keywords[k].indexOf('energ') >= 0 || keywords[k].indexOf('calor') >= 0){
+              var parsed = nums.map(function(n){ return parseFloat(n.replace(',','.')); });
+              // kcal is typically < 1000 for per-100g, kJ is typically > 100
+              var kcalCandidates = parsed.filter(function(v){ return v < 1000; });
+              if(kcalCandidates.length > 0) return kcalCandidates[kcalCandidates.length - 1];
+              return parsed[parsed.length - 1];
+            }
+            // For macros, take the first number after the keyword
+            var afterKeyword = line.substring(line.toLowerCase().indexOf(keywords[k]) + keywords[k].length);
+            var afterNum = afterKeyword.match(/(\d+[\.,]\d+|\d+)/);
+            if(afterNum) return parseFloat(afterNum[1].replace(',','.'));
+            return parseFloat(nums[0].replace(',','.'));
+          }
+        }
+      }
+    }
+    // Fallback: search in full text
+    for(var k=0; k<keywords.length; k++){
+      var re = new RegExp(keywords[k] + '[^\\d]{0,20}(\\d+[\\.,]?\\d*)', 'i');
+      var m = allText.match(re);
+      if(m) return parseFloat(m[1].replace(',','.'));
+    }
+    return null;
+  }
+
+  // Energy / Calories (multiple languages)
+  var kcalVal = findValue(['kcal', 'kkal', 'energi', 'energy', 'calories', 'kalorij', 'energin', 'energ']);
+
+  // Fat (multiple languages)
+  var fatVal = findValue(['fat', 'riebal', 'fedt', 'fett', 'lipid', 'grassi', 'grasa', 'vet', 'tuk']);
 
   // Protein
-  var proteinMatch = allText.match(/(?:protein|baltym|protei|eiwit|blanc)[^\d]*(\d+[\.,]?\d*)\s*g/i)
-    || allText.match(/(?:protein|baltym)[^\d]*(\d+[\.,]?\d*)/i);
+  var proteinVal = findValue(['protein', 'baltym', 'protei', 'eiwit', 'blanc', 'belok']);
 
   // Carbs
-  var carbsMatch = allText.match(/(?:carbohydrate|angliavandeniai|kolhydrat|carboidrat|hidrat|glucid|sacharid)[^\d]*(\d+[\.,]?\d*)\s*g/i)
-    || allText.match(/(?:carb|angliavandeniai|kohlenhydrat)[^\d]*(\d+[\.,]?\d*)/i);
+  var carbsVal = findValue(['carbohydrate', 'angliavandeniai', 'kolhydrat', 'carboidrat', 'kohlenhydrat', 'carb', 'hidrat', 'glucid', 'sacharid', 'koolhydra']);
 
   // Fill form
   var filled = [];
-  if(kcalMatch){
-    document.getElementById('pKcal').value = parseNum(kcalMatch[1]);
-    filled.push('kcal: ' + parseNum(kcalMatch[1]));
+  if(kcalVal !== null){
+    document.getElementById('pKcal').value = kcalVal;
+    filled.push('kcal: ' + kcalVal);
   }
-  if(fatMatch){
-    document.getElementById('pFat').value = parseNum(fatMatch[1]);
-    filled.push('fat: ' + parseNum(fatMatch[1]) + 'g');
+  if(fatVal !== null){
+    document.getElementById('pFat').value = fatVal;
+    filled.push('fat: ' + fatVal + 'g');
   }
-  if(proteinMatch){
-    document.getElementById('pProtein').value = parseNum(proteinMatch[1]);
-    filled.push('protein: ' + parseNum(proteinMatch[1]) + 'g');
+  if(proteinVal !== null){
+    document.getElementById('pProtein').value = proteinVal;
+    filled.push('protein: ' + proteinVal + 'g');
   }
-  if(carbsMatch){
-    document.getElementById('pCarbs').value = parseNum(carbsMatch[1]);
-    filled.push('carbs: ' + parseNum(carbsMatch[1]) + 'g');
+  if(carbsVal !== null){
+    document.getElementById('pCarbs').value = carbsVal;
+    filled.push('carbs: ' + carbsVal + 'g');
   }
 
   // Show result
