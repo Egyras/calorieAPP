@@ -578,7 +578,7 @@ var TRANSLATIONS = {
   'Other': 'Kita',
   'other': 'Kita',
   '+ Add': '+ Pridėti',
-  'Today\'s Log': 'Dienos įrašai',
+  "Today\'s Log": "Dienos įrašai",
   'Food': 'Maistas',
   'Total': 'Viso',
   'fat': 'riebalai',
@@ -764,7 +764,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   <a href="/?date={{ (today[:10] | string) }}" id="prevDay">◀</a>
   <span class="today" id="dateLabel">{{ today }}</span>
   <a href="/?date={{ today }}" id="nextDay">▶</a>
-  <a href="/" style="margin-left:auto">Today</a>
+  <a href="/" style="margin-left:auto" data-i18n="Today">Today</a>
 </div>
 <script>
 (function(){
@@ -856,7 +856,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 <!-- TODAY'S LOG -->
 {% if entries %}
 <div class="card">
-  <div class="card-title" data-i18n="Today's Log">Today's Log</div>
+  <div class="card-title" data-i18n="Today's Log">Today\'s Log</div>
   <div style="overflow-x:auto">
   <table class="data-table">
     <tr><th data-i18n="Food">Food</th><th data-i18n="Grams">Grams</th><th data-i18n="Meal">Meal</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th></th></tr>
@@ -899,9 +899,9 @@ new Chart(document.getElementById('weekChart'), {
     labels: wdata.map(function(d){ return d.date.slice(5); }),
     datasets: [
       {label:'Kcal', data:wdata.map(function(d){return d.kcal;}), backgroundColor:'rgba(74,222,128,.6)', borderRadius:4, yAxisID:'y'},
-      {label:'Protein', data:wdata.map(function(d){return d.protein;}), backgroundColor:'rgba(59,130,246,.6)', borderRadius:4, yAxisID:'y1'},
-      {label:'Fat', data:wdata.map(function(d){return d.fat;}), backgroundColor:'rgba(245,158,11,.6)', borderRadius:4, yAxisID:'y1'},
-      {label:'Carbs', data:wdata.map(function(d){return d.carbs;}), backgroundColor:'rgba(167,139,250,.6)', borderRadius:4, yAxisID:'y1'}
+      {label:(getLang()==='lt'?'Baltymai':'Protein'), data:wdata.map(function(d){return d.protein;}), backgroundColor:'rgba(59,130,246,.6)', borderRadius:4, yAxisID:'y1'},
+      {label:(getLang()==='lt'?'Riebalai':'Fat'), data:wdata.map(function(d){return d.fat;}), backgroundColor:'rgba(245,158,11,.6)', borderRadius:4, yAxisID:'y1'},
+      {label:(getLang()==='lt'?'Angliavandeniai':'Carbs'), data:wdata.map(function(d){return d.carbs;}), backgroundColor:'rgba(167,139,250,.6)', borderRadius:4, yAxisID:'y1'}
     ]
   },
   options: {
@@ -924,7 +924,7 @@ function quickAdd(id, name){
 <div class="card">
   <div class="card-title" data-i18n="Daily Goals">Daily Goals</div>
   <form method="POST" action="/api/goals" class="form-row">
-    <div class="form-group"><label>Kcal</label><input name="kcal" type="number" value="{{ goals.kcal|int if goals else 2000 }}"></div>
+    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" type="number" value="{{ goals.kcal|int if goals else 2000 }}"></div>
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" type="number" value="{{ goals.fat|int if goals else 65 }}"></div>
     <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" type="number" value="{{ goals.protein|int if goals else 50 }}"></div>
     <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" type="number" value="{{ goals.carbs|int if goals else 300 }}"></div>
@@ -1184,10 +1184,10 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 
 {% if products %}
 <div class="card">
-  <div class="card-title">Your Products ({{ products|length }})</div>
+  <div class="card-title"><span data-i18n="Your Products">Your Products</span> ({{ products|length }})</div>
   <div style="overflow-x:auto">
   <table class="data-table">
-    <tr><th data-i18n="Name">Name</th><th>Kcal</th><th>Fat</th><th>Protein</th><th>Carbs</th><th data-i18n="Per">Per</th><th></th></tr>
+    <tr><th data-i18n="Name">Name</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th data-i18n="Per">Per</th><th></th></tr>
     {% for p in products %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ p.name }}</td>
