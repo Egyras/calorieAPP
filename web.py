@@ -1391,7 +1391,7 @@ function startHtml5Scanner(readerDiv, btn){
   });
   html5QrCode.start(
     { facingMode: 'environment' },
-    { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
+    { fps: 20, qrbox: { width: 350, height: 150 }, aspectRatio: 1.5, disableFlip: true },
     function(decodedText){
       if(!validateEAN13(decodedText)) return;
       if(decodedText === lastScannedCode){
