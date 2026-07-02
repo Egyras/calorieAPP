@@ -673,7 +673,11 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
     </div>
     <div class="form-group">
       <label>Grams</label>
-      <input name="grams" type="number" step="0.1" min="0" id="gramsInput" required placeholder="100">
+      <div style="display:flex;gap:4px;">
+        <input name="grams" type="number" step="0.1" min="0" id="gramsInput" required placeholder="100" style="flex:1;">
+        <button type="button" id="scaleBtn" onclick="toggleScale()" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;" title="Connect BLE scale">&#9878;</button>
+      </div>
+      <div id="scaleStatus" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);"></div>
     </div>
     <div class="form-group">
       <label>Meal</label>
@@ -774,6 +778,214 @@ function quickAdd(id, name){
   </form>
 </div>
 
+
+<script>
+var bleDevice = null;
+var bleServer = null;
+var scaleConnected = false;
+
+// Standard Bluetooth Weight Scale Service UUIDs
+var WEIGHT_SCALE_SERVICE = 0x181D;
+var WEIGHT_MEASUREMENT_CHAR = 0x2A9D;
+
+// Common custom UUIDs used by kitchen scales
+var CUSTOM_SERVICES = [
+  '00001910-0000-1000-8000-00805f9b34fb',  // Etekcity-style
+  '0000fff0-0000-1000-8000-00805f9b34fb',  // Common Chinese scales
+  '0000ffe0-0000-1000-8000-00805f9b34fb',  // Another common one
+  '00001820-0000-1000-8000-00805f9b34fb',  // Internet Protocol Support
+];
+var CUSTOM_NOTIFY_CHARS = [
+  '00002c12-0000-1000-8000-00805f9b34fb',
+  '0000fff1-0000-1000-8000-00805f9b34fb',
+  '0000fff4-0000-1000-8000-00805f9b34fb',
+  '0000ffe1-0000-1000-8000-00805f9b34fb',
+  '0000ffe4-0000-1000-8000-00805f9b34fb',
+];
+
+function scaleLog(msg){
+  var el = document.getElementById('scaleStatus');
+  if(el){ el.style.display = 'block'; el.textContent = msg; }
+  try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:'[SCALE] ' + msg})}); } catch(e){}
+}
+
+async function toggleScale(){
+  if(scaleConnected){
+    disconnectScale();
+    return;
+  }
+  if(!navigator.bluetooth){
+    scaleLog('Web Bluetooth not supported in this browser. Use Chrome on Android.');
+    return;
+  }
+  try {
+    scaleLog('Requesting BLE device...');
+    // Request device - try standard weight service first, accept all
+    bleDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
+    });
+    scaleLog('Connecting to ' + (bleDevice.name || 'scale') + '...');
+    bleDevice.addEventListener('gattserverdisconnected', onScaleDisconnected);
+    bleServer = await bleDevice.gatt.connect();
+    document.getElementById('scaleBtn').style.background = 'rgba(74,222,128,.2)';
+    document.getElementById('scaleBtn').style.borderColor = '#4ade80';
+    scaleConnected = true;
+
+    // Try standard weight scale service first
+    var found = await tryStandardWeightService();
+    if(!found){
+      scaleLog('Standard service not found, scanning all services...');
+      found = await tryCustomServices();
+    }
+    if(!found){
+      found = await tryDiscoverAll();
+    }
+    if(!found){
+      scaleLog('Connected but could not find weight data. Check docker logs for discovered services.');
+    }
+  } catch(err) {
+    scaleLog('Connection failed: ' + err.message);
+    scaleConnected = false;
+  }
+}
+
+async function tryStandardWeightService(){
+  try {
+    var service = await bleServer.getPrimaryService(WEIGHT_SCALE_SERVICE);
+    scaleLog('Found standard weight service!');
+    var char = await service.getCharacteristic(WEIGHT_MEASUREMENT_CHAR);
+    await char.startNotifications();
+    char.addEventListener('characteristicvaluechanged', handleStandardWeight);
+    scaleLog('Listening for weight (standard)...');
+    return true;
+  } catch(e){
+    scaleLog('No standard weight service: ' + e.message);
+    return false;
+  }
+}
+
+async function tryCustomServices(){
+  for(var s = 0; s < CUSTOM_SERVICES.length; s++){
+    try {
+      var service = await bleServer.getPrimaryService(CUSTOM_SERVICES[s]);
+      scaleLog('Found service: ' + CUSTOM_SERVICES[s]);
+      var chars = await service.getCharacteristics();
+      for(var c = 0; c < chars.length; c++){
+        scaleLog('  Char: ' + chars[c].uuid + ' props: ' + JSON.stringify(chars[c].properties));
+        if(chars[c].properties.notify || chars[c].properties.indicate){
+          await chars[c].startNotifications();
+          chars[c].addEventListener('characteristicvaluechanged', handleRawWeight);
+          scaleLog('Listening on ' + chars[c].uuid + '...');
+          return true;
+        }
+      }
+    } catch(e){ /* service not found, try next */ }
+  }
+  return false;
+}
+
+async function tryDiscoverAll(){
+  try {
+    var services = await bleServer.getPrimaryServices();
+    scaleLog('Discovered ' + services.length + ' services');
+    for(var s = 0; s < services.length; s++){
+      scaleLog('Service: ' + services[s].uuid);
+      try {
+        var chars = await services[s].getCharacteristics();
+        for(var c = 0; c < chars.length; c++){
+          var p = chars[c].properties;
+          scaleLog('  ' + chars[c].uuid + ' R:' + p.read + ' W:' + p.write + ' N:' + p.notify + ' I:' + p.indicate);
+          if(p.notify || p.indicate){
+            await chars[c].startNotifications();
+            chars[c].addEventListener('characteristicvaluechanged', handleRawWeight);
+            scaleLog('Subscribed to ' + chars[c].uuid);
+            return true;
+          }
+        }
+      } catch(e2){ scaleLog('  Error reading chars: ' + e2.message); }
+    }
+  } catch(e){
+    scaleLog('Cannot discover services: ' + e.message);
+  }
+  return false;
+}
+
+function handleStandardWeight(event){
+  // Bluetooth Weight Measurement format (0x2A9D):
+  // Byte 0: Flags (bit 0: 0=SI/kg, 1=Imperial/lb)
+  // Bytes 1-2: Weight (uint16, resolution 0.005kg or 0.01lb)
+  var data = event.target.value;
+  var flags = data.getUint8(0);
+  var raw = data.getUint16(1, true);
+  var weight;
+  if(flags & 0x01){
+    weight = raw * 0.01; // pounds
+    weight = weight * 453.592; // convert to grams
+  } else {
+    weight = raw * 5; // 0.005 kg = 5 grams resolution
+  }
+  updateWeight(weight);
+}
+
+function handleRawWeight(event){
+  // Generic handler: log raw bytes and try to parse weight
+  var data = event.target.value;
+  var bytes = [];
+  for(var i = 0; i < data.byteLength; i++) bytes.push(data.getUint8(i));
+  scaleLog('Raw: [' + bytes.join(', ') + ']');
+
+  // Try common patterns:
+  // Pattern 1: weight as uint16 little-endian in grams (bytes 2-3 or 3-4)
+  if(data.byteLength >= 4){
+    var w1 = data.getUint16(2, true); // bytes 2-3
+    var w2 = data.getUint16(1, true); // bytes 1-2
+    // Kitchen scales: 0-5000g range
+    if(w1 > 0 && w1 < 10000){
+      updateWeight(w1);
+      return;
+    }
+    // Maybe in 0.1g units
+    if(w1 > 0 && w1 < 100000){
+      updateWeight(w1 / 10);
+      return;
+    }
+    if(w2 > 0 && w2 < 10000){
+      updateWeight(w2);
+      return;
+    }
+  }
+  // Pattern 2: signed int16 (for tare)
+  if(data.byteLength >= 4){
+    var sw = data.getInt16(2, true);
+    if(sw > 0 && sw < 10000){
+      updateWeight(sw);
+      return;
+    }
+  }
+}
+
+function updateWeight(grams){
+  var rounded = Math.round(grams);
+  if(rounded <= 0) return;
+  document.getElementById('gramsInput').value = rounded;
+  scaleLog('Weight: ' + rounded + 'g');
+}
+
+function disconnectScale(){
+  if(bleDevice && bleDevice.gatt.connected){
+    bleDevice.gatt.disconnect();
+  }
+  onScaleDisconnected();
+}
+
+function onScaleDisconnected(){
+  scaleConnected = false;
+  document.getElementById('scaleBtn').style.background = 'var(--surface2)';
+  document.getElementById('scaleBtn').style.borderColor = 'var(--border)';
+  scaleLog('Scale disconnected');
+}
+</script>
 </div></body></html>"""
 
 PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
