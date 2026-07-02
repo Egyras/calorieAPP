@@ -1319,7 +1319,7 @@ var html5QrCode = null;
 var scannerRunning = false;
 var lastScannedCode = '';
 var scanConfirmCount = 0;
-var SCAN_CONFIRM_THRESHOLD = 3;
+var SCAN_CONFIRM_THRESHOLD = 2;
 
 function jslog(msg, level){
   level = level || 'INFO';
@@ -1383,34 +1383,43 @@ function startBarcodeScanner(){
     },
     function(errorMessage){}
   ).then(function(){
-    // Scanner started - now apply focus constraints to the live video track
-    function applyFocus(){
+    // Scanner started - apply zoom and sweep focus distances
+    function setupCamera(){
       try {
         var v = document.querySelector('#barcodeReader video');
         if(!v || !v.srcObject) return;
         var track = v.srcObject.getVideoTracks()[0];
         if(!track) return;
         var caps = track.getCapabilities ? track.getCapabilities() : {};
-        jslog('Camera caps: focusModes=' + JSON.stringify(caps.focusMode || 'none') + ' zoom=' + JSON.stringify(caps.zoom || 'none'));
-        var adv = {};
-        if(caps.focusMode && caps.focusMode.indexOf('continuous') >= 0){
-          adv.focusMode = 'continuous';
+        jslog('Camera caps: focus=' + JSON.stringify(caps.focusMode||'none') + ' dist=' + JSON.stringify(caps.focusDistance||'none') + ' zoom=' + JSON.stringify(caps.zoom||'none'));
+
+        // Apply 2x zoom for small barcodes
+        if(caps.zoom){
+          track.applyConstraints({advanced:[{zoom: 2.0}]}).then(function(){
+            jslog('Zoom set to 2x');
+          }).catch(function(){});
         }
-        if(Object.keys(adv).length){
-          track.applyConstraints({advanced:[adv]}).then(function(){
-            jslog('Autofocus enabled');
-          }).catch(function(e){ jslog('Focus constraint failed: ' + e); });
-        }
-        // Fallback: periodically refocus by toggling focus mode
-        if(caps.focusMode && caps.focusMode.indexOf('manual') >= 0){
+
+        // If manual focus with focusDistance, sweep through distances
+        if(caps.focusMode && caps.focusMode.indexOf('manual') >= 0 && caps.focusDistance){
+          var min = caps.focusDistance.min || 0;
+          var max = caps.focusDistance.max || 1;
+          // Focus distances for typical barcode scanning (15-40cm)
+          var distances = [];
+          var step = (max - min) / 20;
+          for(var d = min; d <= max; d += step) distances.push(d);
+          var idx = 0;
+          jslog('Focus sweep: ' + distances.length + ' steps, range ' + min.toFixed(2) + '-' + max.toFixed(2));
           window._focusInterval = setInterval(function(){
             if(!scannerRunning){ clearInterval(window._focusInterval); return; }
-            track.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
-          }, 3000);
+            var dist = distances[idx % distances.length];
+            track.applyConstraints({advanced:[{focusMode:'manual', focusDistance: dist}]}).catch(function(){});
+            idx++;
+          }, 400);
         }
-      } catch(e){ jslog('Focus setup error: ' + e); }
+      } catch(e){ jslog('Camera setup error: ' + e); }
     }
-    setTimeout(applyFocus, 800);
+    setTimeout(setupCamera, 800);
   }).catch(function(err){
     jslog('Camera error: ' + err, 'ERROR');
     readerDiv.style.display = 'none';
@@ -1421,6 +1430,7 @@ function startBarcodeScanner(){
 }
 
 function stopBarcodeScanner(){
+  if(window._focusInterval) clearInterval(window._focusInterval);
   showStatus('', 'hide');
   var btn = document.getElementById('scanBarcodeBtn');
   btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
