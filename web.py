@@ -69,6 +69,12 @@ def close_db(_):
     db = g.pop("db", None)
     if db: db.close()
 
+@app.after_request
+def no_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def login_required(f):
