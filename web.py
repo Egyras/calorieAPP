@@ -1359,9 +1359,28 @@ function startBarcodeScanner(){
       Html5QrcodeSupportedFormats.UPC_E
     ]
   });
-  html5QrCode.start(
-    { facingMode: { exact: 'environment' } },
-    { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
+  // First get camera with autofocus + high res, then pass stream to scanner
+  navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { exact: 'environment' },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      focusMode: { ideal: 'continuous' },
+      zoom: { ideal: 1.5 }
+    }
+  }).then(function(stream){
+    // Apply constraints again on track (some browsers need this)
+    var track = stream.getVideoTracks()[0];
+    var caps = track.getCapabilities ? track.getCapabilities() : {};
+    var adv = {};
+    if(caps.focusMode) adv.focusMode = 'continuous';
+    if(caps.torch) adv.torch = false;
+    if(Object.keys(adv).length) track.applyConstraints({advanced:[adv]}).catch(function(){});
+    // Stop this stream - we just needed to configure the camera
+    stream.getTracks().forEach(function(t){ t.stop(); });
+    return html5QrCode.start(
+      { facingMode: { exact: 'environment' } },
+      { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
     function(decodedText){
       if(!validateEAN13(decodedText)){
         return;
@@ -1384,7 +1403,8 @@ function startBarcodeScanner(){
     function(errorMessage){
       // Scan miss - ignore
     }
-  ).catch(function(err){
+  );
+  }).catch(function(err){
     jslog('Camera error: ' + err, 'ERROR');
     readerDiv.style.display = 'none';
     btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
@@ -1392,32 +1412,26 @@ function startBarcodeScanner(){
   });
   scannerRunning = true;
 
-  // Request continuous autofocus and high resolution
+  // Apply autofocus to the active video track once scanner is running
   setTimeout(function(){
     try {
-      var videoElem = document.querySelector('#barcodeReader video');
-      if(videoElem && videoElem.srcObject){
-        var track = videoElem.srcObject.getVideoTracks()[0];
-        var caps = track.getCapabilities ? track.getCapabilities() : {};
-        var constraints = {};
-        if(caps.focusMode && caps.focusMode.indexOf('continuous') >= 0){
-          constraints.focusMode = 'continuous';
-        }
-        if(caps.zoom){
-          constraints.zoom = Math.min(caps.zoom.max, 2.0);
-        }
-        if(caps.width){
-          constraints.width = {ideal: 1920};
-          constraints.height = {ideal: 1080};
-        }
-        if(Object.keys(constraints).length > 0){
-          track.applyConstraints({advanced: [constraints]}).then(function(){
-            jslog('Camera constraints applied: ' + JSON.stringify(constraints));
-          }).catch(function(e){ jslog('Constraint error: ' + e); });
+      var v = document.querySelector('#barcodeReader video');
+      if(v && v.srcObject){
+        var t = v.srcObject.getVideoTracks()[0];
+        var c = t.getCapabilities ? t.getCapabilities() : {};
+        var adv = {};
+        if(c.focusMode && c.focusMode.indexOf('continuous') >= 0) adv.focusMode = 'continuous';
+        if(c.zoom) adv.zoom = Math.min(c.zoom.max, 1.8);
+        if(Object.keys(adv).length){
+          t.applyConstraints({advanced:[adv]}).then(function(){
+            jslog('Focus applied: ' + JSON.stringify(adv));
+          }).catch(function(e){jslog('Focus err: '+e);});
+        } else {
+          jslog('No focus capabilities: ' + JSON.stringify(c));
         }
       }
-    } catch(e){ jslog('Focus setup error: ' + e); }
-  }, 500);
+    } catch(e){}
+  }, 1000);
 }
 
 function stopBarcodeScanner(){
