@@ -771,10 +771,10 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
       <button type="button" class="btn btn-ghost btn-sm" onclick="stopCamera()">Cancel</button>
     </div>
     <div class="scan-actions" id="scanActions" style="display:none">
-      <button type="button" class="btn btn-sm" onclick="runOCR()">🔍 Extract Values</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">Try Again</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="resetScan()">📷 Try Again</button>
     </div>
     <div class="scan-status" id="scanStatus"><div class="scan-spinner"></div><span id="scanText">Processing...</span></div>
+    <pre id="ocrDebug" style="display:none;margin-top:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-all"></pre>
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
@@ -878,8 +878,9 @@ function showImage(src){
   img.src = src;
   preview.style.display = 'block';
   document.getElementById('cameraControls').classList.remove('active');
-  document.getElementById('scanActions').style.display = 'flex';
   document.getElementById('scanBtn').style.display = 'none';
+  // Auto-run OCR immediately
+  runOCR();
 }
 
 function capturePhoto(){
@@ -946,9 +947,14 @@ async function runOCR(){
     var result = await ocrWorker.recognize(img.src);
     var text = result.data.text;
     console.log('OCR raw text:', text);
+    // Show raw OCR text for debugging
+    var debugEl = document.getElementById('ocrDebug');
+    debugEl.style.display = 'block';
+    debugEl.textContent = 'OCR read:\n' + text;
     statusText.textContent = 'Extracting values...';
     parseNutritionLabel(text);
     status.classList.remove('active');
+    document.getElementById('scanActions').style.display = 'flex';
   } catch(err) {
     statusText.textContent = 'OCR failed: ' + (err.message || err);
     console.error('OCR error:', err);
