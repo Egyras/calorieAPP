@@ -1317,6 +1317,9 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 <script>
 var html5QrCode = null;
 var scannerRunning = false;
+var lastScannedCode = '';
+var scanConfirmCount = 0;
+var SCAN_CONFIRM_THRESHOLD = 3;
 
 function jslog(msg, level){
   level = level || 'INFO';
@@ -1344,6 +1347,8 @@ function startBarcodeScanner(){
 
   readerDiv.style.display = 'block';
   btn.textContent = 'Stop Scanner';
+  lastScannedCode = '';
+  scanConfirmCount = 0;
   jslog('Starting barcode scanner');
 
   html5QrCode = new Html5Qrcode('barcodeReader', {
@@ -1355,19 +1360,26 @@ function startBarcodeScanner(){
     ]
   });
   html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 5, qrbox: { width: 280, height: 160 }, aspectRatio: 1.5, disableFlip: false },
+    { facingMode: { exact: 'environment' } },
+    { fps: 15, qrbox: { width: 300, height: 120 }, aspectRatio: 2.0, disableFlip: true },
     function(decodedText){
-      jslog('Barcode detected: ' + decodedText);
       if(!validateEAN13(decodedText)){
-        jslog('Invalid EAN checksum, ignoring: ' + decodedText, 'WARN');
         return;
       }
-      stopBarcodeScanner();
-      document.getElementById('manualBarcode').value = decodedText;
-      var msg = (getLang()==='lt' ? 'Aptiktas kodas: ' : 'Detected: ') + decodedText;
-      showStatus(msg, 'ok');
-      lookupBarcode(decodedText);
+      if(decodedText === lastScannedCode){
+        scanConfirmCount++;
+      } else {
+        lastScannedCode = decodedText;
+        scanConfirmCount = 1;
+      }
+      var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
+      showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
+      if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
+        jslog('Barcode confirmed (' + SCAN_CONFIRM_THRESHOLD + 'x): ' + decodedText);
+        stopBarcodeScanner();
+        document.getElementById('manualBarcode').value = decodedText;
+        lookupBarcode(decodedText);
+      }
     },
     function(errorMessage){
       // Scan miss - ignore
