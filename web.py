@@ -115,11 +115,13 @@ def google_auth():
             session["user_id"] = user["id"]
             db.execute("UPDATE users SET name=?, picture=? WHERE id=?",
                        (idinfo.get("name"), idinfo.get("picture"), user["id"]))
+            ensure_default_products(db, user["id"])
         else:
             cur = db.execute("INSERT INTO users (email, name, picture) VALUES (?,?,?)",
                              (email, idinfo.get("name"), idinfo.get("picture")))
             session["user_id"] = cur.lastrowid
             db.execute("INSERT INTO daily_goals (user_id) VALUES (?)", (cur.lastrowid,))
+            ensure_default_products(db, cur.lastrowid)
         db.commit()
         return redirect(url_for("index"))
     except Exception as e:
@@ -141,6 +143,7 @@ def dev_auth():
         cur = db.execute("INSERT INTO users (email, name) VALUES (?,?)", (email, email.split("@")[0]))
         session["user_id"] = cur.lastrowid
         db.execute("INSERT INTO daily_goals (user_id) VALUES (?)", (cur.lastrowid,))
+        ensure_default_products(db, cur.lastrowid)
     db.commit()
     return redirect(url_for("index"))
 
