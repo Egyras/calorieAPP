@@ -1044,18 +1044,31 @@ async function toggleScale(){
     return;
   }
   if(!navigator.bluetooth){
-    scaleLog('Web Bluetooth not supported. Requires Chrome or Edge on Android. Not available on iOS.');
+    scaleLog('Web Bluetooth not supported in this browser. Try Chrome on Android or Bluefy on iOS.');
     return;
   }
   try {
     scaleLog('Requesting BLE device...');
     // Request device - try standard weight service first, accept all
-    bleDevice = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
-    });
+    // Try with service filter first (more compatible), fall back to acceptAll
+    try {
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{services: [WEIGHT_SCALE_SERVICE]}],
+        optionalServices: [0x180A].concat(CUSTOM_SERVICES)
+      });
+    } catch(filterErr) {
+      scaleLog('Trying broader scan...');
+      bleDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
+      });
+    }
     scaleLog('Connecting to ' + (bleDevice.name || 'scale') + '...');
     bleDevice.addEventListener('gattserverdisconnected', onScaleDisconnected);
+    if(!bleDevice.gatt){
+      scaleLog('Device does not support GATT');
+      return;
+    }
     bleServer = await bleDevice.gatt.connect();
     document.getElementById('scaleBtn').style.background = 'rgba(74,222,128,.2)';
     document.getElementById('scaleBtn').style.borderColor = '#4ade80';
@@ -1074,7 +1087,7 @@ async function toggleScale(){
       scaleLog('Connected but could not find weight data. Check docker logs for discovered services.');
     }
   } catch(err) {
-    scaleLog('Connection failed: ' + err.message);
+    scaleLog('Connection failed: ' + (err.message || err.toString || String(err)));
     scaleConnected = false;
   }
 }
