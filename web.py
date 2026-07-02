@@ -892,24 +892,34 @@ var cameraStream = null;
 var ocrWorker = null;
 var tesseractReady = false;
 
-// Resize large camera images so OCR doesn't choke on 12MP photos
+// Resize and preprocess image for better OCR
 function resizeForOCR(dataUrl, maxW, callback){
   var img = new Image();
   img.onload = function(){
-    if(img.width <= maxW){
-      callback(dataUrl);
-      return;
-    }
-    var scale = maxW / img.width;
+    var w = img.width;
+    var h = img.height;
+    var scale = (w > maxW) ? maxW / w : 1;
     var c = document.createElement('canvas');
-    c.width = maxW;
-    c.height = Math.round(img.height * scale);
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
     var ctx = c.getContext('2d');
-    // Sharpen for OCR: white bg, high quality
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, c.width, c.height);
     ctx.drawImage(img, 0, 0, c.width, c.height);
-    callback(c.toDataURL('image/jpeg', 0.92));
+    // Convert to high-contrast B&W for OCR
+    var imageData = ctx.getImageData(0, 0, c.width, c.height);
+    var data = imageData.data;
+    for(var i = 0; i < data.length; i += 4){
+      var gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      gray = ((gray - 128) * 1.8) + 128;
+      gray = gray < 0 ? 0 : (gray > 255 ? 255 : gray);
+      gray = gray < 140 ? 0 : 255;
+      data[i] = gray;
+      data[i+1] = gray;
+      data[i+2] = gray;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    callback(c.toDataURL('image/png'));
   };
   img.onerror = function(){ callback(dataUrl); };
   img.src = dataUrl;
@@ -1031,7 +1041,7 @@ async function runOCR(){
     jslog('Creating Tesseract worker...');
 
     if(!ocrWorker){
-      ocrWorker = await Tesseract.createWorker('eng', 1, {
+      ocrWorker = await Tesseract.createWorker('eng+lit', 1, {
         logger: function(m){
           jslog('Tesseract: ' + m.status + ' ' + Math.round((m.progress||0)*100) + '%');
           if(m.status === 'loading tesseract core'){
