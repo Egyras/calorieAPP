@@ -175,10 +175,11 @@ def google_auth():
 
 @app.route("/auth/dev", methods=["POST"])
 def dev_auth():
-    """Dev login when no Google OAuth configured."""
-    if GOOGLE_CLIENT_ID:
-        return redirect(url_for("login"))
+    """Simple email login (works in any browser)."""
     email = request.form.get("email", "dev@localhost")
+    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        flash("Access denied. Your email is not authorized.")
+        return redirect(url_for("login"))
     db = get_db()
     user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if user:
@@ -797,6 +798,13 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
     }).then(function(r){ window.location.href = "/"; });
   }
   </script>
+  <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
+    <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;">Google login not working? Sign in with email:</p>
+    <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
+      <input name="email" type="email" placeholder="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <button type="submit" class="btn" style="white-space:nowrap;">Sign In</button>
+    </form>
+  </div>
 </div>
 </body></html>"""
 
@@ -1036,7 +1044,7 @@ async function toggleScale(){
     return;
   }
   if(!navigator.bluetooth){
-    scaleLog('Web Bluetooth not supported in this browser. Use Chrome on Android.');
+    scaleLog('Web Bluetooth not supported. Requires Chrome or Edge on Android. Not available on iOS.');
     return;
   }
   try {
