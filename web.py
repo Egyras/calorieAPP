@@ -929,40 +929,22 @@ function handleStandardWeight(event){
 }
 
 function handleRawWeight(event){
-  // Generic handler: log raw bytes and try to parse weight
+  // Arboleaf kitchen scale protocol (reverse-engineered from packet diffs):
+  // Weight lives at bytes 9-10, big-endian uint16, 0.1g resolution.
+  // Bytes 0-8 and 11-16 are constant across readings (device/status fields);
+  // byte 17 changes unpredictably and looks like a checksum.
   var data = event.target.value;
   var bytes = [];
   for(var i = 0; i < data.byteLength; i++) bytes.push(data.getUint8(i));
   scaleLog('Raw: [' + bytes.join(', ') + ']');
 
-  // Try common patterns:
-  // Pattern 1: weight as uint16 little-endian in grams (bytes 2-3 or 3-4)
-  if(data.byteLength >= 4){
-    var w1 = data.getUint16(2, true); // bytes 2-3
-    var w2 = data.getUint16(1, true); // bytes 1-2
-    // Kitchen scales: 0-5000g range
-    if(w1 > 0 && w1 < 10000){
-      updateWeight(w1);
-      return;
-    }
-    // Maybe in 0.1g units
-    if(w1 > 0 && w1 < 100000){
-      updateWeight(w1 / 10);
-      return;
-    }
-    if(w2 > 0 && w2 < 10000){
-      updateWeight(w2);
-      return;
-    }
+  if(data.byteLength >= 11){
+    var w = data.getUint16(9, false); // bytes 9-10, big-endian
+    updateWeight(w / 10);
+    return;
   }
-  // Pattern 2: signed int16 (for tare)
-  if(data.byteLength >= 4){
-    var sw = data.getInt16(2, true);
-    if(sw > 0 && sw < 10000){
-      updateWeight(sw);
-      return;
-    }
-  }
+
+  scaleLog('Packet too short to parse weight (' + data.byteLength + ' bytes)', 'ERROR');
 }
 
 function updateWeight(grams){
