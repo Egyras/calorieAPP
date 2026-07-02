@@ -465,7 +465,13 @@ a{color:var(--accent-bright);text-decoration:none;}
 .form-group input,.form-group select{
   background:var(--surface2);border:1px solid var(--border);color:var(--text-strong);
   padding:9px 11px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;
-  transition:border-color .2s,box-shadow .2s;
+  transition:border-color .2s,box-shadow .2s;min-width:0;width:100%;box-sizing:border-box;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.log-form-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.5rem;align-items:end;}
+.log-form-row .form-group{min-width:0;}
+@media(max-width:600px){
+  .log-form-row{grid-template-columns:1fr;}
 }
 .form-group input:focus,.form-group select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,222,128,.15);}
 .btn{
@@ -662,7 +668,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
     </div>
     {% endfor %}
   </div>
-  <form method="POST" action="/api/log" class="form-row" id="logForm">
+  <form method="POST" action="/api/log" class="log-form-row" id="logForm">
     <input type="hidden" name="log_date" value="{{ today }}">
     <div class="form-group wide">
       <label>Product</label>
