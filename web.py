@@ -1363,19 +1363,7 @@ function startBarcodeScanner(){
     { facingMode: 'environment' },
     { fps: 20, qrbox: { width: 350, height: 100 }, aspectRatio: 2.5, disableFlip: true },
     function(decodedText){
-      // Any detection means focus is good - lock it
-      if(!window._focusLocked && window._focusTrack){
-        window._focusLocked = true;
-        jslog('Focus locked - barcode detected');
-        setTimeout(function(){
-          if(scannerRunning && scanConfirmCount < SCAN_CONFIRM_THRESHOLD){
-            window._focusLocked = false;
-            jslog('Focus unlocked - resuming sweep');
-          }
-        }, 5000);
-      }
       if(!validateEAN13(decodedText)){
-        // Bad checksum but focus is right, keep scanning
         return;
       }
       if(decodedText === lastScannedCode){
@@ -1454,7 +1442,6 @@ function startBarcodeScanner(){
 }
 
 function stopBarcodeScanner(){
-  if(window._focusInterval) clearInterval(window._focusInterval);
   showStatus('', 'hide');
   var btn = document.getElementById('scanBarcodeBtn');
   btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
