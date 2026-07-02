@@ -859,23 +859,50 @@ document.getElementById('editModal').addEventListener('click',function(e){if(e.t
 </script>
 
 <!-- Tesseract.js OCR -->
-<script>var tesseractLoaded = false;</script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
-  onload="tesseractLoaded=true; console.log('Tesseract.js loaded OK');"
-  onerror="console.error('Tesseract.js failed to load');
-    document.getElementById('scanStatus').classList.add('active');
-    document.getElementById('scanText').textContent='OCR library failed to load. Enter values manually.';
-    document.getElementById('scanText').style.color='#f59e0b';"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 var cameraStream = null;
 var ocrWorker = null;
 
+// Resize large camera images so OCR doesn't choke on 12MP photos
+function resizeForOCR(dataUrl, maxW, callback){
+  var img = new Image();
+  img.onload = function(){
+    if(img.width <= maxW){
+      callback(dataUrl);
+      return;
+    }
+    var scale = maxW / img.width;
+    var c = document.createElement('canvas');
+    c.width = maxW;
+    c.height = Math.round(img.height * scale);
+    var ctx = c.getContext('2d');
+    // Sharpen for OCR: white bg, high quality
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    callback(c.toDataURL('image/jpeg', 0.92));
+  };
+  img.onerror = function(){ callback(dataUrl); };
+  img.src = dataUrl;
+}
+
 function handleFile(input){
   var file = input.files[0];
   if(!file) return;
+  var status = document.getElementById('scanStatus');
+  var statusText = document.getElementById('scanText');
+  status.classList.add('active');
+  statusText.textContent = 'Loading image...';
   var reader = new FileReader();
   reader.onload = function(ev){
-    showImage(ev.target.result);
+    resizeForOCR(ev.target.result, 1500, function(resized){
+      showImage(resized);
+    });
+  };
+  reader.onerror = function(){
+    statusText.textContent = 'Failed to read image file.';
+    statusText.style.color = '#f59e0b';
   };
   reader.readAsDataURL(file);
 }
@@ -903,7 +930,9 @@ function capturePhoto(){
   canvas.getContext('2d').drawImage(video, 0, 0);
   var dataUrl = canvas.toDataURL('image/jpeg', 0.9);
   stopCamera();
-  showImage(dataUrl);
+  resizeForOCR(dataUrl, 1500, function(resized){
+    showImage(resized);
+  });
 }
 
 function stopCamera(){
@@ -923,6 +952,7 @@ function resetScan(){
   document.getElementById('scanStatus').classList.remove('active');
   document.getElementById('scanStatus').style.background = '';
   document.getElementById('scanStatus').style.borderColor = '';
+  document.getElementById('ocrDebug').style.display = 'none';
   var spinner = document.getElementById('scanStatus').querySelector('.scan-spinner');
   if(spinner) spinner.style.display = '';
   document.getElementById('scanBtnCamera').style.display = '';
@@ -936,13 +966,17 @@ async function runOCR(){
   if(!img.src) return;
   var status = document.getElementById('scanStatus');
   var statusText = document.getElementById('scanText');
+  var debugEl = document.getElementById('ocrDebug');
   status.classList.add('active');
   document.getElementById('scanActions').style.display = 'none';
+  debugEl.style.display = 'block';
+  debugEl.textContent = 'Starting OCR...';
 
   // Check if Tesseract loaded
   if(typeof Tesseract === 'undefined'){
-    statusText.textContent = 'OCR library not loaded. Check internet connection. Enter values manually.';
+    statusText.textContent = 'OCR library not loaded. Enter values manually.';
     statusText.style.color = '#f59e0b';
+    debugEl.textContent = 'ERROR: Tesseract.js script failed to load from CDN.';
     var spinner = status.querySelector('.scan-spinner');
     if(spinner) spinner.style.display = 'none';
     document.getElementById('scanActions').style.display = 'flex';
@@ -950,39 +984,51 @@ async function runOCR(){
   }
 
   try {
-    statusText.textContent = 'Loading OCR engine (first time may take 10-20s)...';
+    statusText.textContent = 'Loading OCR engine...';
+    debugEl.textContent = 'Tesseract.js loaded. Creating worker...';
 
     if(!ocrWorker){
       ocrWorker = await Tesseract.createWorker('eng', 1, {
         logger: function(m){
           if(m.status === 'loading tesseract core'){
             statusText.textContent = 'Loading OCR core...';
+            debugEl.textContent += '\\nLoading core...';
           } else if(m.status === 'loading language traineddata'){
             statusText.textContent = 'Loading language data...';
+            debugEl.textContent += '\\nLoading language data...';
+          } else if(m.status === 'initializing tesseract'){
+            statusText.textContent = 'Initializing...';
+            debugEl.textContent += '\\nInitializing...';
           } else if(m.status === 'recognizing text'){
-            statusText.textContent = 'Reading label... ' + Math.round((m.progress||0)*100) + '%';
+            var pct = Math.round((m.progress||0)*100);
+            statusText.textContent = 'Reading label... ' + pct + '%';
+            if(pct % 20 === 0) debugEl.textContent += '\\nRecognizing... ' + pct + '%';
+          } else {
+            debugEl.textContent += '\\n' + m.status + ' ' + Math.round((m.progress||0)*100) + '%';
           }
         }
       });
+      debugEl.textContent += '\\nWorker created OK.';
     } else {
       statusText.textContent = 'Reading label...';
     }
 
+    debugEl.textContent += '\\nStarting recognize...';
     var result = await ocrWorker.recognize(img.src);
     var text = result.data.text;
-    console.log('OCR raw text:', text);
-    // Show raw OCR text for debugging
-    var debugEl = document.getElementById('ocrDebug');
-    debugEl.style.display = 'block';
-    debugEl.textContent = 'OCR read:\n' + text;
+    debugEl.textContent = 'OCR result:\\n' + text;
     statusText.textContent = 'Extracting values...';
     parseNutritionLabel(text);
-    status.classList.remove('active');
     document.getElementById('scanActions').style.display = 'flex';
   } catch(err) {
-    statusText.textContent = 'OCR failed: ' + (err.message || err);
+    var errMsg = err.message || String(err);
+    statusText.textContent = 'OCR failed: ' + errMsg;
+    statusText.style.color = '#f59e0b';
+    debugEl.textContent += '\\nERROR: ' + errMsg;
     console.error('OCR error:', err);
     document.getElementById('scanActions').style.display = 'flex';
+    var spinner = status.querySelector('.scan-spinner');
+    if(spinner) spinner.style.display = 'none';
     ocrWorker = null;
   }
 }
