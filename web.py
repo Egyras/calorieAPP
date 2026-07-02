@@ -193,6 +193,10 @@ def dev_auth():
     db.commit()
     return redirect(url_for("index"))
 
+
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
 @app.route("/logout")
 def logout():
     session.clear()
@@ -1011,9 +1015,10 @@ var bleDevice = null;
 var bleServer = null;
 var scaleConnected = false;
 
-// Standard Bluetooth Weight Scale Service UUIDs
-var WEIGHT_SCALE_SERVICE = 0x181D;
-var WEIGHT_MEASUREMENT_CHAR = 0x2A9D;
+// Standard Bluetooth Weight Scale Service UUIDs (full string form for Bluefy compatibility)
+var WEIGHT_SCALE_SERVICE = '0000181d-0000-1000-8000-00805f9b34fb';
+var WEIGHT_MEASUREMENT_CHAR = '00002a9d-0000-1000-8000-00805f9b34fb';
+var DEVICE_INFO_SERVICE = '0000180a-0000-1000-8000-00805f9b34fb';
 
 // Common custom UUIDs used by kitchen scales
 var CUSTOM_SERVICES = [
@@ -1044,15 +1049,24 @@ async function toggleScale(){
     return;
   }
   if(!navigator.bluetooth){
-    scaleLog('Web Bluetooth not supported in this browser. Try Chrome on Android or Bluefy on iOS.');
+    scaleLog('Web Bluetooth not supported in this browser. Use Chrome on Android for scale.');
     return;
   }
   try {
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    var isBluefy = /Bluefy/.test(navigator.userAgent);
+    if(isIOS && !isBluefy){
+      scaleLog('iOS requires Bluefy browser for BLE. Install from App Store.');
+      return;
+    }
+    if(isIOS && isBluefy){
+      scaleLog('Bluefy detected - attempting BLE connection...');
+    }
     scaleLog('Requesting BLE device...');
     // Request device - try standard weight service first, accept all
     bleDevice = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [WEIGHT_SCALE_SERVICE, 0x180A].concat(CUSTOM_SERVICES)
+      optionalServices: [WEIGHT_SCALE_SERVICE, DEVICE_INFO_SERVICE].concat(CUSTOM_SERVICES)
     });
     scaleLog('Connecting to ' + (bleDevice.name || 'scale') + '...');
     bleDevice.addEventListener('gattserverdisconnected', onScaleDisconnected);
