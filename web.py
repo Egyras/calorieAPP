@@ -587,6 +587,10 @@ def cancel_group_request(req_id):
 def leave_group(gid):
     uid = session["user_id"]
     db = get_db()
+    # Prevent leaving own default groups
+    grp = db.execute("SELECT name, created_by FROM groups WHERE id=?", (gid,)).fetchone()
+    if grp and grp["created_by"] == uid and grp["name"] in ("Family", "Friends"):
+        return redirect(request.referrer or url_for("index"))
     db.execute("DELETE FROM group_members WHERE group_id=? AND user_id=?", (gid, uid))
     # Delete group if empty
     remaining = db.execute("SELECT COUNT(*) as c FROM group_members WHERE group_id=?", (gid,)).fetchone()["c"]
@@ -938,7 +942,7 @@ var TRANSLATIONS = {
   'Invite': 'Pakviesti',
   'Invite by email...': 'Pakviesti el. paštu...',
   'Family': 'Šeima',
-  'Friends': 'Draugai',,
+  'Friends': 'Draugai',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
