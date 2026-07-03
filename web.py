@@ -977,6 +977,7 @@ var TRANSLATIONS = {
   'Family': 'Šeima',
   'Friends': 'Draugai',
   'No members yet': 'Narių dar nėra',
+  'Leave': 'Palikti',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
@@ -1478,22 +1479,7 @@ document.addEventListener('click',function(e){
 </div>
 {% endif %}
 
-{% if sent_requests %}
-<div class="card">
-  <div class="card-title" data-i18n="Sent requests:">Sent requests:</div>
-  {% for r in sent_requests %}
-  <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
-    <span style="color:var(--text-strong);font-size:13px;flex:1">{{ r.name or r.email }} → <span style="color:var(--accent)">{{ r.group_name }}</span></span>
-    {% if r.status == 'pending' %}
-    <span style="color:var(--muted);font-size:11px;background:var(--surface3);padding:2px 8px;border-radius:4px" data-i18n="Pending">Pending</span>
-    <form method="POST" action="/api/group/cancel/{{ r.id }}" style="display:inline"><button type="submit" class="btn-ghost btn-sm" title="Cancel">✕</button></form>
-    {% else %}
-    <span style="color:var(--accent);font-size:11px;background:rgba(74,222,128,.1);padding:2px 8px;border-radius:4px" data-i18n="Accepted">Accepted</span>
-    {% endif %}
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+
 
 <div class="card">
   <div class="card-title" data-i18n="Groups">Groups</div>
@@ -1503,7 +1489,7 @@ document.addEventListener('click',function(e){
       <span style="font-weight:600;color:var(--accent-bright);font-size:14px" data-i18n="{{ g.name }}">{{ g.name }}</span>
       {% if g.created_by != session.get('user_id') %}
       <form method="POST" action="/api/group/{{ g.id }}/leave" style="margin-left:auto;display:inline" onsubmit="return confirm(getLang()==='lt'?'Palikti grupę {{ g.name }}?':'Leave {{ g.name }}?')">
-        <button type="submit" class="btn-ghost btn-sm" title="Leave">✕</button>
+        <button type="submit" class="btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" data-i18n="Leave">Leave</button>
       </form>
       {% endif %}
     </div>
@@ -1517,7 +1503,16 @@ document.addEventListener('click',function(e){
       {% endif %}
     </div>
     {% endfor %}
-    {% if g.members|length == 0 %}
+    {% for sr in sent_requests if sr.group_name == g.name %}
+    <div style="font-size:12px;color:var(--muted);padding:2px 0;display:flex;align-items:center;gap:6px;">
+      <span style="flex:1">{{ sr.name or sr.email }}</span>
+      {% if sr.status == 'pending' %}
+      <span style="font-size:10px;background:var(--surface3);padding:1px 6px;border-radius:4px" data-i18n="Pending">Pending</span>
+      <form method="POST" action="/api/group/cancel/{{ sr.id }}" style="display:inline"><button type="submit" class="btn-ghost btn-sm" style="font-size:10px;padding:2px 6px">✕</button></form>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if g.members|length == 0 and not sent_requests|selectattr('group_name','equalto',g.name)|list %}
     <div style="font-size:12px;color:var(--muted);font-style:italic;padding:2px 0;" data-i18n="No members yet">No members yet</div>
     {% endif %}
     <form method="POST" action="/api/group/{{ g.id }}/invite" style="display:flex;gap:4px;margin-top:6px;">
