@@ -705,11 +705,13 @@ var TRANSLATIONS = {
 };
 
 function getLang(){
+  try { var ls = localStorage.getItem('lang'); if(ls) return ls; } catch(e){}
   var c = document.cookie.match('(^|;)\\s*lang=([^;]+)');
   return c ? c[2] : 'en';
 }
 function setLang(lang){
   document.cookie = 'lang=' + lang + ';path=/;max-age=31536000;SameSite=Lax';
+  try { localStorage.setItem('lang', lang); } catch(e){}
 }
 function toggleLang(){
   var lang = getLang() === 'en' ? 'lt' : 'en';
@@ -766,10 +768,6 @@ function applyLang(lang){
     var dy = String(d.getDate()).padStart(2,'0');
     var wd = d.toLocaleDateString(locale, {weekday:'short'});
     var label = yr + '-' + mo + '-' + dy + ', ' + wd;
-    var today = new Date();
-    if(d.toISOString().slice(0,10) === today.toISOString().slice(0,10)){
-      label = (lang === 'lt' ? 'Šiandien' : 'Today') + ' — ' + label;
-    }
     dateLabel.textContent = label;
   }
 }
@@ -872,7 +870,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   var loc = getLang && getLang() === 'lt' ? 'lt-LT' : 'en-US';
   var wd = d.toLocaleDateString(loc, {weekday:'short'});
   var label = fmt(d) + ', ' + wd;
-  if(fmt(d) === fmt(new Date())) label = (loc === 'lt-LT' ? 'Šiandien' : 'Today') + ' — ' + label;
+
   document.getElementById('dateLabel').textContent = label; document.getElementById('dateLabel').setAttribute('data-date', '{{ today }}');
 })();
 </script>
