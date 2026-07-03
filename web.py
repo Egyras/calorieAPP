@@ -213,6 +213,12 @@ def index():
     user = current_user()
     goals = db.execute("SELECT * FROM daily_goals WHERE user_id=?", (uid,)).fetchone()
     products = db.execute("SELECT * FROM products WHERE user_id=? ORDER BY name", (uid,)).fetchall()
+    top_products = db.execute("""
+        SELECT p.*, COUNT(dl.id) as use_count FROM products p
+        JOIN daily_log dl ON dl.product_id = p.id AND dl.user_id = p.user_id
+        WHERE p.user_id=?
+        GROUP BY p.id ORDER BY use_count DESC LIMIT 8
+    """, (uid,)).fetchall()
     log_entries = db.execute("""
         SELECT dl.id, dl.grams, dl.meal, dl.log_date,
                p.name, p.kcal, p.fat, p.protein, p.carbs, p.per_grams
@@ -261,7 +267,7 @@ def index():
                           "carbs": round(row["carbs"], 1)})
 
     return render_template_string(MAIN_PAGE,
-        user=user, today=today, products=products,
+        user=user, today=today, products=products, top_products=top_products,
         entries=entries, totals=totals, goals=goals,
         week_data=json.dumps(week_data))
 
@@ -888,7 +894,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 <div class="card">
   <div class="card-title" data-i18n="Quick Add">Quick Add</div>
   <div class="quick-add">
-    {% for p in products[:12] %}
+    {% for p in top_products %}
     <div class="quick-chip" onclick="quickAdd({{ p.id }}, '{{ p.name|e }}')">
       <span class="qname">{{ p.name }}</span>
       <span class="qmeta">{{ p.kcal|int }} kcal/{{ p.per_grams|int }}g</span>
@@ -1249,7 +1255,7 @@ function onScaleDisconnected(){
 PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Products — CalorieTracker</title>""" + STYLE + """
 <style>
-.pl-item{padding:8px 12px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid var(--border);}
+.pl-item{padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid var(--border);margin:2px 4px;border-radius:6px;}
 .pl-item:hover,.pl-item.active{background:var(--accent);color:#fff;}
 .pl-item:last-child{border-bottom:none;}
 .scan-area{margin-bottom:1rem;}
