@@ -1705,9 +1705,9 @@ RECIPES_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 .recipe-actions{display:flex;gap:8px;flex-wrap:wrap;}
 .recipe-actions form{margin:0;}
 .recipe-instructions{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:8px;white-space:pre-line;}
-.ing-row{display:flex;gap:8px;margin-bottom:6px;align-items:center;}
-.ing-row select,.ing-row input{flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;}
-.ing-row input{max-width:80px;}
+.ing-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;padding:8px;background:var(--surface);border-radius:8px;}
+.ing-row select{width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;}
+.ing-row input{width:80px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;}
 .ing-row button{background:var(--danger,#e74c3c);color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;}
 #createRecipeForm{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;}
 </style>
@@ -1780,14 +1780,54 @@ var products = [
 var ingCount = 0;
 function addIngredient(){
   ingCount++;
+  var n = ingCount;
   var div = document.createElement('div');
   div.className = 'ing-row';
-  var opts = products.map(function(p){ return '<option value="'+p.id+'">'+p.name+' ('+Math.round(p.kcal)+' kcal/'+Math.round(p.per)+'g)</option>'; }).join('');
-  div.innerHTML = '<select name="product_id[]"><option value="">--</option>'+opts+'</select>'
+  div.innerHTML = '<input type="hidden" name="product_id[]" id="ingPid'+n+'">'
+    + '<div style="position:relative;width:100%">'
+    + '<input type="text" id="ingSearch'+n+'" autocomplete="off" placeholder="Search products..." data-i18n-ph="Search products..." '
+    + 'onclick="showIngList('+n+')" oninput="filterIngList('+n+')" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box;">'
+    + '<div id="ingList'+n+'" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;z-index:10;"></div>'
+    + '</div>'
     + '<input type="number" name="grams[]" placeholder="g" min="1" step="0.1" required>'
-    + '<button type="button" onclick="this.parentNode.remove()">✕</button>';
+    + '<button type="button" onclick="this.parentNode.remove()">\u2715</button>';
+  var list = div.querySelector('#ingList'+n);
+  products.forEach(function(p){
+    var item = document.createElement('div');
+    item.style.cssText = 'padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);';
+    item.textContent = p.name+' ('+Math.round(p.kcal)+' kcal/'+Math.round(p.per)+'g)';
+    item.dataset.id = p.id;
+    item.dataset.name = p.name;
+    item.onmouseover = function(){ this.style.background='var(--accent)'; this.style.color='#fff'; };
+    item.onmouseout = function(){ this.style.background=''; this.style.color=''; };
+    item.onclick = function(){ pickIng(n, this.dataset.id, this.dataset.name); };
+    list.appendChild(item);
+  });
   document.getElementById('ingredientList').appendChild(div);
 }
+function showIngList(n){
+  var list = document.getElementById('ingList'+n);
+  list.style.display = list.style.display === 'none' ? 'block' : 'none';
+}
+function filterIngList(n){
+  var q = document.getElementById('ingSearch'+n).value.toLowerCase();
+  var list = document.getElementById('ingList'+n);
+  list.style.display = 'block';
+  Array.from(list.children).forEach(function(el){
+    el.style.display = el.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+function pickIng(n, id, name){
+  document.getElementById('ingPid'+n).value = id;
+  document.getElementById('ingSearch'+n).value = name;
+  document.getElementById('ingList'+n).style.display = 'none';
+}
+// Close dropdowns on outside click
+document.addEventListener('click', function(e){
+  if(!e.target.matches('[id^=ingSearch]')){
+    document.querySelectorAll('[id^=ingList]').forEach(function(el){ el.style.display='none'; });
+  }
+});
 // Start with one ingredient row
 addIngredient();
 
