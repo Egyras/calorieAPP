@@ -656,6 +656,7 @@ var TRANSLATIONS = {
   'Scan Barcode': 'Skenuoti kodą',
   'Or type barcode...': 'Arba įveskite kodą...',
   'Filter products...': 'Filtruoti produktus...',
+  'Search products...': 'Ieškoti produktų...',
   'Look up': 'Ieškoti',
   'Product Name': 'Produkto pavadinimas',
   'Per (g)': 'Kiekis (g)',
@@ -898,10 +899,13 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
     <input type="hidden" name="log_date" value="{{ today }}">
     <div class="form-group wide">
       <label data-i18n="Product">Product</label>
-      <select name="product_id" id="productSelect" required>
-        <option value="" data-i18n-opt="Select...">Select...</option>
-        {% for p in products %}<option value="{{ p.id }}">{{ p.name }} ({{ p.kcal|int }} kcal/{{ p.per_grams|int }}g)</option>{% endfor %}
-      </select>
+      <input type="hidden" name="product_id" id="productSelectValue" required>
+      <div style="position:relative" id="productDropdown">
+        <input type="text" id="productSearch" autocomplete="off" placeholder="Search products..." data-i18n-ph="Search products..." onclick="showProductList()" oninput="filterProductList()" style="width:100%;">
+        <div id="productList" style="display:none;position:absolute;left:0;right:0;top:100%;max-height:200px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:0 0 8px 8px;z-index:100;">
+          {% for p in products %}<div class="pl-item" data-id="{{ p.id }}" data-name="{{ p.name }}" onclick="pickProduct(this)">{{ p.name }} ({{ p.kcal|int }} kcal/{{ p.per_grams|int }}g)</div>{% endfor %}
+        </div>
+      </div>
     </div>
     <div class="form-group">
       <label data-i18n="Grams">Grams</label>
@@ -993,9 +997,33 @@ new Chart(document.getElementById('weekChart'), {
   }
 });
 function quickAdd(id, name){
-  document.getElementById('productSelect').value = id;
+  document.getElementById('productSelectValue').value = id;
+  document.getElementById('productSearch').value = name;
+  document.getElementById('productList').style.display = 'none';
   document.getElementById('gramsInput').focus();
 }
+function showProductList(){
+  document.getElementById('productList').style.display='block';
+  filterProductList();
+}
+function filterProductList(){
+  var q=document.getElementById('productSearch').value.toLowerCase();
+  var items=document.getElementById('productList').querySelectorAll('.pl-item');
+  for(var i=0;i<items.length;i++){
+    items[i].style.display=items[i].getAttribute('data-name').toLowerCase().indexOf(q)>-1?'':'none';
+  }
+}
+function pickProduct(el){
+  document.getElementById('productSelectValue').value=el.getAttribute('data-id');
+  document.getElementById('productSearch').value=el.getAttribute('data-name');
+  document.getElementById('productList').style.display='none';
+}
+document.addEventListener('click',function(e){
+  var dd=document.getElementById('productDropdown');
+  if(dd && !dd.contains(e.target)){
+    document.getElementById('productList').style.display='none';
+  }
+});
 </script>
 
 <!-- GOALS -->
@@ -1221,6 +1249,9 @@ function onScaleDisconnected(){
 PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Products — CalorieTracker</title>""" + STYLE + """
 <style>
+.pl-item{padding:8px 12px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid var(--border);}
+.pl-item:hover,.pl-item.active{background:var(--accent);color:#fff;}
+.pl-item:last-child{border-bottom:none;}
 .scan-area{margin-bottom:1rem;}
 .scan-btn{
   display:inline-flex;align-items:center;gap:8px;padding:10px 18px;
