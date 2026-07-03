@@ -365,6 +365,22 @@ def delete_product(pid):
 def add_log():
     uid = session["user_id"]
     db = get_db()
+    if request.is_json:
+        data = request.get_json()
+        log_date = data.get("log_date", date.today().isoformat())
+        db.execute("INSERT INTO daily_log (user_id, product_id, grams, log_date, meal) VALUES (?,?,?,?,?)",
+                   (uid, int(data["product_id"]), float(data["grams"]), log_date, data.get("meal", "other")))
+        db.commit()
+        # Return updated totals
+        row = db.execute("""
+            SELECT COALESCE(SUM(p.kcal * dl.grams / p.per_grams),0) as kcal,
+                   COALESCE(SUM(p.fat * dl.grams / p.per_grams),0) as fat,
+                   COALESCE(SUM(p.protein * dl.grams / p.per_grams),0) as protein,
+                   COALESCE(SUM(p.carbs * dl.grams / p.per_grams),0) as carbs
+            FROM daily_log dl JOIN products p ON dl.product_id=p.id
+            WHERE dl.user_id=? AND dl.log_date=?
+        """, (uid, log_date)).fetchone()
+        return jsonify({"ok": True, "totals": {"kcal": round(row["kcal"],1), "fat": round(row["fat"],1), "protein": round(row["protein"],1), "carbs": round(row["carbs"],1)}})
     log_date = request.form.get("log_date", date.today().isoformat())
     db.execute("INSERT INTO daily_log (user_id, product_id, grams, log_date, meal) VALUES (?,?,?,?,?)",
                (uid, int(request.form["product_id"]),
@@ -868,22 +884,22 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 <!-- DAILY TOTALS -->
 <div class="stat-grid">
   <div class="stat-card">
-    <div class="stat-num kcal-color">{{ totals.kcal }}</div>
+    <div class="stat-num kcal-color" id="totalKcal">{{ totals.kcal }}</div>
     <div class="stat-lbl"><span data-i18n="Kcal">kcal</span>{% if goals %} / {{ goals.kcal|int }}{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill kcal-fill" style="width:{{ [totals.kcal/goals.kcal*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
-    <div class="stat-num fat-color">{{ totals.fat }}g</div>
+    <div class="stat-num fat-color" id="totalFat">{{ totals.fat }}g</div>
     <div class="stat-lbl"><span data-i18n="Fat">fat</span>{% if goals %} / {{ goals.fat|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill fat-fill" style="width:{{ [totals.fat/goals.fat*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
-    <div class="stat-num protein-color">{{ totals.protein }}g</div>
+    <div class="stat-num protein-color" id="totalProtein">{{ totals.protein }}g</div>
     <div class="stat-lbl"><span data-i18n="Protein">protein</span>{% if goals %} / {{ goals.protein|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill protein-fill" style="width:{{ [totals.protein/goals.protein*100, 100]|min }}%"></div></div>{% endif %}
   </div>
   <div class="stat-card">
-    <div class="stat-num carbs-color">{{ totals.carbs }}g</div>
+    <div class="stat-num carbs-color" id="totalCarbs">{{ totals.carbs }}g</div>
     <div class="stat-lbl"><span data-i18n="Carbs">carbs</span>{% if goals %} / {{ goals.carbs|int }}g{% endif %}</div>
     {% if goals %}<div class="stat-bar"><div class="stat-fill carbs-fill" style="width:{{ [totals.carbs/goals.carbs*100, 100]|min }}%"></div></div>{% endif %}
   </div>
@@ -1000,6 +1016,49 @@ new Chart(document.getElementById('weekChart'), {
       y:{position:'left',ticks:{color:'#4ade80'},grid:{color:'rgba(255,255,255,.04)'},title:{display:true,text:'Kcal',color:'#4ade80'}},
       y1:{position:'right',ticks:{color:'#8b95a8'},grid:{display:false},title:{display:true,text:(getLang()==='lt'?'Gramai':'Grams'),color:'#8b95a8'}}
     }
+  }
+});
+document.addEventListener('DOMContentLoaded', function(){
+  var form = document.getElementById('logForm');
+  if(form){
+    form.addEventListener('submit', function(e){
+      if(!scaleConnected){ return; } // normal submit if scale not connected
+      e.preventDefault();
+      var productId = document.getElementById('productSelectValue').value;
+      var grams = document.getElementById('gramsInput').value;
+      var meal = form.querySelector('select[name="meal"]').value;
+      var logDate = form.querySelector('input[name="log_date"]').value;
+      if(!productId || !grams){ return; }
+      fetch('/api/log', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({product_id: productId, grams: grams, meal: meal, log_date: logDate}),
+        credentials: 'same-origin'
+      }).then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data.ok){
+          var lang = getLang();
+          var name = document.getElementById('productSearch').value;
+          showStatus((lang==='lt' ? 'Prideta: ' : 'Added: ') + name + ' ' + grams + 'g', 'ok');
+          document.getElementById('gramsInput').value = '';
+          document.getElementById('productSearch').value = '';
+          document.getElementById('productSelectValue').value = '';
+          // Update totals display
+          if(data.totals){
+            var kcalEl = document.getElementById('totalKcal');
+            if(kcalEl) kcalEl.textContent = Math.round(data.totals.kcal);
+            var fatEl = document.getElementById('totalFat');
+            if(fatEl) fatEl.textContent = data.totals.fat.toFixed(1) + 'g';
+            var proteinEl = document.getElementById('totalProtein');
+            if(proteinEl) proteinEl.textContent = data.totals.protein.toFixed(1) + 'g';
+            var carbsEl = document.getElementById('totalCarbs');
+            if(carbsEl) carbsEl.textContent = data.totals.carbs.toFixed(1) + 'g';
+          }
+        }
+      }).catch(function(err){
+        showStatus('Error: ' + (err.message || err), 'warn');
+      });
+    });
   }
 });
 function quickAdd(id, name){
