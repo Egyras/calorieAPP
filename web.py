@@ -41,6 +41,7 @@ def get_db():
                 protein    REAL NOT NULL DEFAULT 0,
                 carbs      REAL NOT NULL DEFAULT 0,
                 per_grams  REAL NOT NULL DEFAULT 100,
+                barcode    TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
@@ -106,6 +107,12 @@ def get_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         """)
+        # Migrate: add barcode column if missing
+        try:
+            db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")
+            db.commit()
+        except Exception:
+            pass  # column already exists
         db.commit()
         g.db = db
     return g.db
@@ -341,7 +348,7 @@ def index():
     user = current_user()
     goals = db.execute("SELECT * FROM daily_goals WHERE user_id=?", (uid,)).fetchone()
     group_ids = get_group_user_ids(db, uid)
-    products = db.execute("SELECT * FROM products WHERE user_id IN ({}) ORDER BY name".format(",".join("?" * len(group_ids))), group_ids).fetchall()
+    products = db.execute("SELECT *, MIN(id) as min_id FROM products WHERE user_id IN ({}) GROUP BY name, kcal, fat, protein, carbs, per_grams ORDER BY name".format(",".join("?" * len(group_ids))), group_ids).fetchall()
     top_products = db.execute("""
         SELECT p.*, COUNT(dl.id) as use_count FROM products p
         JOIN daily_log dl ON dl.product_id = p.id
@@ -437,13 +444,15 @@ def barcode_lookup(code):
 def add_product():
     uid = session["user_id"]
     db = get_db()
-    db.execute("INSERT INTO products (user_id, name, kcal, fat, protein, carbs, per_grams) VALUES (?,?,?,?,?,?,?)",
+    barcode = request.form.get("barcode", "").strip() or None
+    db.execute("INSERT INTO products (user_id, name, kcal, fat, protein, carbs, per_grams, barcode) VALUES (?,?,?,?,?,?,?,?)",
                (uid, request.form["name"],
                 float(request.form.get("kcal", 0)),
                 float(request.form.get("fat", 0)),
                 float(request.form.get("protein", 0)),
                 float(request.form.get("carbs", 0)),
-                float(request.form.get("per_grams", 100))))
+                float(request.form.get("per_grams", 100)),
+                barcode))
     db.commit()
     return redirect(request.referrer or url_for("index"))
 
@@ -674,7 +683,7 @@ def recipes_page():
         recipe_list.append({"id": r["id"], "name": r["name"], "instructions": r["instructions"],
                            "author": r["author_name"] or r["author_email"], "user_id": r["user_id"],
                            "items": items, "totals": totals})
-    products = db.execute("SELECT * FROM products WHERE user_id IN ({}) ORDER BY name".format(placeholders), group_ids).fetchall()
+    products = db.execute("SELECT *, MIN(id) as min_id FROM products WHERE user_id IN ({}) GROUP BY name, kcal, fat, protein, carbs, per_grams ORDER BY name".format(placeholders), group_ids).fetchall()
     return render_template_string(RECIPES_PAGE, user=user, recipes=recipe_list, products=products, active="recipes", today=date.today().isoformat(), session=session)
 
 @app.route("/api/recipe", methods=["POST"])
@@ -728,7 +737,7 @@ def products_page():
     db = get_db()
     user = current_user()
     group_ids = get_group_user_ids(db, uid)
-    products = db.execute("SELECT * FROM products WHERE user_id IN ({}) ORDER BY name".format(",".join("?" * len(group_ids))), group_ids).fetchall()
+    products = db.execute("SELECT *, MIN(id) as min_id FROM products WHERE user_id IN ({}) GROUP BY name, kcal, fat, protein, carbs, per_grams ORDER BY name".format(",".join("?" * len(group_ids))), group_ids).fetchall()
     return render_template_string(PRODUCTS_PAGE, user=user, products=products)
 
 @app.route("/history")
@@ -1937,6 +1946,7 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   </div>
 
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
+    <input type="hidden" name="barcode" id="pBarcode">
     <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast" data-i18n-ph="e.g. Chicken Breast"></div>
     <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
@@ -2164,6 +2174,8 @@ function lookupBarcode(code){
         document.getElementById('pFat').value = data.fat || '';
         document.getElementById('pProtein').value = data.protein || '';
         document.getElementById('pCarbs').value = data.carbs || '';
+        var bField = document.getElementById('pBarcode');
+        if(bField) bField.value = code;
         showStatus('Found: ' + name + ' (' + data.kcal + ' kcal, ' + data.fat + 'g fat, ' + data.protein + 'g protein, ' + data.carbs + 'g carbs)', 'success');
         document.getElementById('pName').focus();
       } else {
