@@ -134,21 +134,42 @@ def get_group_user_ids(db, user_id):
     return ids
 
 def get_user_groups(db, user_id):
-    """Get all groups the user belongs to, with members."""
+    """Get all groups the user belongs to, merged by name.
+    For Family/Friends, merges all groups with same name into one view.
+    Uses the user's own group id for invites."""
     groups = db.execute("""
         SELECT g.id, g.name, g.created_by FROM groups g
         JOIN group_members gm ON gm.group_id = g.id
         WHERE gm.user_id=?
     """, (user_id,)).fetchall()
-    result = []
+    # Merge by name — collect all group_ids per name, combine members
+    merged = {}
     for grp in groups:
-        members = db.execute("""
-            SELECT u.id, u.email, u.name FROM group_members gm
-            JOIN users u ON u.id = gm.user_id
-            WHERE gm.group_id=? AND gm.user_id != ?
-        """, (grp["id"], user_id)).fetchall()
-        result.append({"id": grp["id"], "name": grp["name"], "created_by": grp["created_by"], "members": members})
-    return result
+        name = grp["name"]
+        if name not in merged:
+            # Prefer user's own group id for invites
+            merged[name] = {"id": grp["id"], "name": name, "created_by": grp["created_by"],
+                           "group_ids": [grp["id"]], "members": []}
+        else:
+            merged[name]["group_ids"].append(grp["id"])
+            # If this one is owned by the user, use its id for invites
+            if grp["created_by"] == user_id:
+                merged[name]["id"] = grp["id"]
+                merged[name]["created_by"] = grp["created_by"]
+    for entry in merged.values():
+        seen = set()
+        for gid in entry["group_ids"]:
+            members = db.execute("""
+                SELECT u.id, u.email, u.name FROM group_members gm
+                JOIN users u ON u.id = gm.user_id
+                WHERE gm.group_id=? AND gm.user_id != ?
+            """, (gid, user_id)).fetchall()
+            for m in members:
+                if m["id"] not in seen:
+                    seen.add(m["id"])
+                    entry["members"].append(m)
+        del entry["group_ids"]
+    return list(merged.values())
 
 def get_pending_requests(db, user_id):
     """Get pending join requests sent TO this user."""
@@ -582,6 +603,18 @@ def cancel_group_request(req_id):
     db.commit()
     return redirect(request.referrer or url_for("index"))
 
+@app.route("/api/group/<int:gid>/kick/<int:uid_to_kick>", methods=["POST"])
+@login_required
+def kick_from_group(gid, uid_to_kick):
+    uid = session["user_id"]
+    db = get_db()
+    # Only group creator can kick
+    grp = db.execute("SELECT created_by FROM groups WHERE id=?", (gid,)).fetchone()
+    if grp and grp["created_by"] == uid:
+        db.execute("DELETE FROM group_members WHERE group_id=? AND user_id=?", (gid, uid_to_kick))
+        db.commit()
+    return redirect(request.referrer or url_for("index"))
+
 @app.route("/api/group/<int:gid>/leave", methods=["POST"])
 @login_required
 def leave_group(gid):
@@ -943,6 +976,7 @@ var TRANSLATIONS = {
   'Invite by email...': 'Pakviesti el. paštu...',
   'Family': 'Šeima',
   'Friends': 'Draugai',
+  'No members yet': 'Narių dar nėra',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
@@ -1474,8 +1508,18 @@ document.addEventListener('click',function(e){
       {% endif %}
     </div>
     {% for m in g.members %}
-    <div style="font-size:12px;color:var(--muted);padding:2px 0;">{{ m.name or m.email }}</div>
+    <div style="font-size:12px;color:var(--muted);padding:2px 0;display:flex;align-items:center;gap:6px;">
+      <span style="flex:1">{{ m.name or m.email }}</span>
+      {% if g.created_by == session.get('user_id') %}
+      <form method="POST" action="/api/group/{{ g.id }}/kick/{{ m.id }}" style="display:inline" onsubmit="return confirm('Remove {{ m.name or m.email }}?')">
+        <button type="submit" class="btn-ghost btn-sm" style="font-size:10px;padding:2px 6px">✕</button>
+      </form>
+      {% endif %}
+    </div>
     {% endfor %}
+    {% if g.members|length == 0 %}
+    <div style="font-size:12px;color:var(--muted);font-style:italic;padding:2px 0;" data-i18n="No members yet">No members yet</div>
+    {% endif %}
     <form method="POST" action="/api/group/{{ g.id }}/invite" style="display:flex;gap:4px;margin-top:6px;">
       <input name="email" type="email" placeholder="Invite by email..." data-i18n-ph="Invite by email..." style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:inherit;">
       <button type="submit" class="btn btn-sm" style="padding:4px 10px" data-i18n="Invite">Invite</button>
