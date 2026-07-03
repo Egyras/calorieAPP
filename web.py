@@ -217,7 +217,7 @@ def index():
     top_products = db.execute("""
         SELECT p.*, COUNT(dl.id) as use_count FROM products p
         JOIN daily_log dl ON dl.product_id = p.id AND dl.user_id = p.user_id
-        WHERE p.user_id=?
+        WHERE p.user_id=? AND dl.log_date >= date('now', '-7 days')
         GROUP BY p.id ORDER BY use_count DESC LIMIT 8
     """, (uid,)).fetchall()
     log_entries = db.execute("""
