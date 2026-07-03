@@ -1046,7 +1046,7 @@ document.addEventListener('DOMContentLoaded', function(){
         if(data.ok){
           var lang = getLang();
           var name = document.getElementById('productSearch').value;
-          showStatus((lang==='lt' ? 'Prideta: ' : 'Added: ') + name + ' ' + grams + 'g', 'ok');
+          showToast((lang==='lt' ? 'Prideta: ' : 'Added: ') + name + ' ' + grams + 'g');
           document.getElementById('gramsInput').value = '';
           document.getElementById('productSearch').value = '';
           document.getElementById('productSelectValue').value = '';
@@ -1087,14 +1087,48 @@ document.addEventListener('DOMContentLoaded', function(){
             if(ltp) ltp.textContent = data.totals.protein.toFixed(1) + 'g';
             var ltc = document.getElementById('logTotalCarbs');
             if(ltc) ltc.textContent = data.totals.carbs.toFixed(1) + 'g';
+            // Update progress bars
+            var fills = document.querySelectorAll('.stat-fill');
+            fills.forEach(function(f){
+              var cls = f.className;
+              var goals = {kcal:0,fat:0,protein:0,carbs:0};
+              var gs = document.querySelectorAll('.stat-lbl');
+              gs.forEach(function(lbl){
+                var txt = lbl.textContent;
+                var m = txt.match(/\/\s*(\d+)/);
+                if(m){
+                  if(lbl.parentElement.querySelector('.kcal-fill')) goals.kcal = parseInt(m[1]);
+                  if(lbl.parentElement.querySelector('.fat-fill')) goals.fat = parseInt(m[1]);
+                  if(lbl.parentElement.querySelector('.protein-fill')) goals.protein = parseInt(m[1]);
+                  if(lbl.parentElement.querySelector('.carbs-fill')) goals.carbs = parseInt(m[1]);
+                }
+              });
+              if(cls.indexOf('kcal-fill')>-1 && goals.kcal) f.style.width = Math.min(data.totals.kcal/goals.kcal*100,100)+'%';
+              if(cls.indexOf('fat-fill')>-1 && goals.fat) f.style.width = Math.min(data.totals.fat/goals.fat*100,100)+'%';
+              if(cls.indexOf('protein-fill')>-1 && goals.protein) f.style.width = Math.min(data.totals.protein/goals.protein*100,100)+'%';
+              if(cls.indexOf('carbs-fill')>-1 && goals.carbs) f.style.width = Math.min(data.totals.carbs/goals.carbs*100,100)+'%';
+            });
           }
         }
       }).catch(function(err){
-        showStatus('Error: ' + (err.message || err), 'warn');
+        showToast('Error: ' + (err.message || err));
       });
     });
   }
 });
+function showToast(msg){
+  var t = document.getElementById('ajaxToast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'ajaxToast';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function(){ t.style.opacity = '0'; }, 2500);
+}
 function quickAdd(id, name){
   document.getElementById('productSelectValue').value = id;
   document.getElementById('productSearch').value = name;
