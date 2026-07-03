@@ -186,7 +186,7 @@ def get_sent_requests(db, user_id):
         SELECT gr.id, gr.status, g.name as group_name, u.email, u.name FROM group_request gr
         JOIN users u ON u.id = gr.to_id
         JOIN groups g ON g.id = gr.group_id
-        WHERE gr.from_id=? AND gr.status IN ('pending','accepted')
+        WHERE gr.from_id=? AND gr.status='pending'
     """, (user_id,)).fetchall()
 
 def ensure_default_groups(db, user_id):
@@ -568,7 +568,13 @@ def invite_to_group(gid):
     target = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if not target or target["id"] == uid:
         return redirect(request.referrer or url_for("index"))
-    db.execute("INSERT OR IGNORE INTO group_request (group_id, from_id, to_id) VALUES (?,?,?)", (gid, uid, target["id"]))
+    # Reset declined requests or create new
+    existing = db.execute("SELECT id, status FROM group_request WHERE group_id=? AND from_id=? AND to_id=?", (gid, uid, target["id"])).fetchone()
+    if existing:
+        if existing["status"] in ("declined", "accepted"):
+            db.execute("UPDATE group_request SET status='pending' WHERE id=?", (existing["id"],))
+    else:
+        db.execute("INSERT INTO group_request (group_id, from_id, to_id) VALUES (?,?,?)", (gid, uid, target["id"]))
     db.commit()
     return redirect(request.referrer or url_for("index"))
 
