@@ -761,7 +761,11 @@ function applyLang(lang){
   if(dateLabel && dateLabel.getAttribute('data-date')){
     var d = new Date(dateLabel.getAttribute('data-date'));
     var locale = lang === 'lt' ? 'lt-LT' : 'en-US';
-    var label = d.toLocaleDateString(locale, {weekday:'short', month:'short', day:'numeric'});
+    var yr = d.getFullYear();
+    var mo = String(d.getMonth()+1).padStart(2,'0');
+    var dy = String(d.getDate()).padStart(2,'0');
+    var wd = d.toLocaleDateString(locale, {weekday:'short'});
+    var label = yr + '-' + mo + '-' + dy + ', ' + wd;
     var today = new Date();
     if(d.toISOString().slice(0,10) === today.toISOString().slice(0,10)){
       label = (lang === 'lt' ? 'Šiandien' : 'Today') + ' — ' + label;
