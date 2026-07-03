@@ -63,6 +63,22 @@ def get_db():
                 carbs      REAL DEFAULT 300,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+            CREATE TABLE IF NOT EXISTS family_group (
+                user_id    INTEGER NOT NULL,
+                group_id   INTEGER NOT NULL,
+                UNIQUE(user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            CREATE TABLE IF NOT EXISTS family_request (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id    INTEGER NOT NULL,
+                to_id      INTEGER NOT NULL,
+                status     TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(from_id, to_id),
+                FOREIGN KEY (from_id) REFERENCES users(id),
+                FOREIGN KEY (to_id) REFERENCES users(id)
+            );
         """)
         db.commit()
         g.db = db
@@ -78,6 +94,33 @@ def no_cache(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
+
+def get_family_user_ids(db, user_id):
+    """Return list of user IDs in the same family group (including self)."""
+    row = db.execute("SELECT group_id FROM family_group WHERE user_id=?", (user_id,)).fetchone()
+    if not row:
+        return [user_id]
+    members = db.execute("SELECT user_id FROM family_group WHERE group_id=?", (row["group_id"],)).fetchall()
+    return [m["user_id"] for m in members]
+
+def get_family_members(db, user_id):
+    """Get all family members' info."""
+    row = db.execute("SELECT group_id FROM family_group WHERE user_id=?", (user_id,)).fetchone()
+    if not row:
+        return []
+    return db.execute("""
+        SELECT u.id, u.email, u.name FROM family_group fg
+        JOIN users u ON u.id = fg.user_id
+        WHERE fg.group_id=? AND fg.user_id != ?
+    """, (row["group_id"], user_id)).fetchall()
+
+def get_pending_requests(db, user_id):
+    """Get pending join requests sent TO this user."""
+    return db.execute("""
+        SELECT fr.id, u.email, u.name FROM family_request fr
+        JOIN users u ON u.id = fr.from_id
+        WHERE fr.to_id=? AND fr.status='pending'
+    """, (user_id,)).fetchall()
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -98,7 +141,8 @@ def current_user():
 
 def ensure_default_products(db, user_id):
     """Add default Lithuanian food products if missing."""
-    existing_names = set(r[0] for r in db.execute("SELECT name FROM products WHERE user_id=?", (user_id,)).fetchall())
+    family_ids = get_family_user_ids(db, user_id)
+    existing_names = set(r[0] for r in db.execute("SELECT name FROM products WHERE user_id IN ({})".format(",".join("?" * len(family_ids))), family_ids).fetchall())
     defaults = [
         ("Pomidorai", 18, 0.2, 0.9, 3.9, 100),
         ("Agurkai", 15, 0.1, 0.7, 3.6, 100),
@@ -213,13 +257,14 @@ def index():
     uid = session["user_id"]
     user = current_user()
     goals = db.execute("SELECT * FROM daily_goals WHERE user_id=?", (uid,)).fetchone()
-    products = db.execute("SELECT * FROM products WHERE user_id=? ORDER BY name", (uid,)).fetchall()
+    family_ids = get_family_user_ids(db, uid)
+    products = db.execute("SELECT * FROM products WHERE user_id IN ({}) ORDER BY name".format(",".join("?" * len(family_ids))), family_ids).fetchall()
     top_products = db.execute("""
         SELECT p.*, COUNT(dl.id) as use_count FROM products p
-        JOIN daily_log dl ON dl.product_id = p.id AND dl.user_id = p.user_id
-        WHERE p.user_id=? AND dl.log_date >= date('now', '-7 days')
+        JOIN daily_log dl ON dl.product_id = p.id
+        WHERE p.user_id IN ({}) AND dl.user_id=? AND dl.log_date >= date('now', '-7 days')
         GROUP BY p.id ORDER BY use_count DESC LIMIT 8
-    """, (uid,)).fetchall()
+    """.format(",".join("?" * len(family_ids))), family_ids + [uid]).fetchall()
     log_entries = db.execute("""
         SELECT dl.id, dl.grams, dl.meal, dl.log_date,
                p.name, p.kcal, p.fat, p.protein, p.carbs, p.per_grams
@@ -252,7 +297,9 @@ def index():
 
     return render_template_string(MAIN_PAGE,
         user=user, today=today, products=products, top_products=top_products,
-        entries=entries, totals=totals, goals=goals)
+        entries=entries, totals=totals, goals=goals,
+        family_members=get_family_members(db, uid),
+        pending_requests=get_pending_requests(db, uid))
 
 @app.route("/api/jslog", methods=["POST"])
 def js_log():
@@ -410,13 +457,75 @@ def update_goals():
     db.commit()
     return redirect(request.referrer or url_for("index"))
 
+@app.route("/api/family/request", methods=["POST"])
+@login_required
+def send_family_request():
+    uid = session["user_id"]
+    db = get_db()
+    email = request.form.get("email", "").strip().lower()
+    if not email:
+        return redirect(request.referrer or url_for("index"))
+    target = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    if not target:
+        return redirect(request.referrer or url_for("index"))
+    if target["id"] == uid:
+        return redirect(request.referrer or url_for("index"))
+    db.execute("INSERT OR IGNORE INTO family_request (from_id, to_id) VALUES (?,?)", (uid, target["id"]))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/family/accept/<int:req_id>", methods=["POST"])
+@login_required
+def accept_family(req_id):
+    uid = session["user_id"]
+    db = get_db()
+    req = db.execute("SELECT * FROM family_request WHERE id=? AND to_id=? AND status='pending'", (req_id, uid)).fetchone()
+    if not req:
+        return redirect(request.referrer or url_for("index"))
+    # Link both users in same group
+    existing = db.execute("SELECT group_id FROM family_group WHERE user_id=?", (uid,)).fetchone()
+    if existing:
+        gid = existing["group_id"]
+    else:
+        mx = db.execute("SELECT COALESCE(MAX(group_id),0) as m FROM family_group").fetchone()["m"]
+        gid = mx + 1
+        db.execute("INSERT INTO family_group (user_id, group_id) VALUES (?,?)", (uid, gid))
+    # Add requester to same group
+    other = db.execute("SELECT group_id FROM family_group WHERE user_id=?", (req["from_id"],)).fetchone()
+    if other:
+        db.execute("UPDATE family_group SET group_id=? WHERE user_id=?", (gid, req["from_id"]))
+    else:
+        db.execute("INSERT INTO family_group (user_id, group_id) VALUES (?,?)", (req["from_id"], gid))
+    db.execute("UPDATE family_request SET status='accepted' WHERE id=?", (req_id,))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/family/decline/<int:req_id>", methods=["POST"])
+@login_required
+def decline_family(req_id):
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("UPDATE family_request SET status='declined' WHERE id=? AND to_id=?", (req_id, uid))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/family/leave", methods=["POST"])
+@login_required
+def leave_family():
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("DELETE FROM family_group WHERE user_id=?", (uid,))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
 @app.route("/products")
 @login_required
 def products_page():
     uid = session["user_id"]
     db = get_db()
     user = current_user()
-    products = db.execute("SELECT * FROM products WHERE user_id=? ORDER BY name", (uid,)).fetchall()
+    family_ids = get_family_user_ids(db, uid)
+    products = db.execute("SELECT * FROM products WHERE user_id IN ({}) ORDER BY name".format(",".join("?" * len(family_ids))), family_ids).fetchall()
     return render_template_string(PRODUCTS_PAGE, user=user, products=products)
 
 @app.route("/history")
@@ -659,6 +768,14 @@ var TRANSLATIONS = {
   '7-Day Trend': '7 dienų tendencija',
   'Daily Goals': 'Dienos tikslai',
   'Save Goals': 'Išsaugoti tikslus',
+  'Family Sharing': 'Šeimos dalinimasis',
+  'Shared products with:': 'Produktai dalinami su:',
+  'Pending requests:': 'Laukiantys prašymai:',
+  'Accept': 'Priimti',
+  'Decline': 'Atmesti',
+  'Enter email...': 'Įveskite el. paštą...',
+  'Send Request': 'Siųsti prašymą',
+  'Leave Group': 'Palikti grupę',
   'Today': 'Šiandien',
   'No products yet. Add your first food product to start tracking.': 'Produktų dar nėra. Pridėkite pirmą maisto produktą.',
   '+ Add Products': '+ Pridėti produktus',
@@ -788,6 +905,7 @@ NAV = """
     <a href="/history" class="nav-link {{ 'active' if active=='history' }}">📅 <span class="hide-mobile" data-i18n="History">History</span></a>
     {% if user and user.picture %}<img src="{{ user.picture }}" class="nav-avatar" referrerpolicy="no-referrer">{% endif %}
     <button onclick="toggleLang()" id="langBtn" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;margin-left:4px;">EN</button>
+    <script>(function(){try{var l=localStorage.getItem('lang');if(!l){var c=document.cookie.match('(^|;)\\s*lang=([^;]+)');l=c?c[2]:'en';}document.getElementById('langBtn').textContent=l==='en'?'LT':'EN';}catch(e){}})()</script>
     <a href="/logout" class="nav-link">↗</a>
   </div>
 </nav>
@@ -1134,6 +1252,38 @@ document.addEventListener('click',function(e){
   </form>
 </div>
 
+<!-- FAMILY SHARING -->
+<div class="card">
+  <div class="card-title" data-i18n="Family Sharing">Family Sharing</div>
+  {% if pending_requests %}
+  <div style="margin-bottom:12px">
+    <p style="color:var(--accent-bright);font-size:12px;font-weight:600;margin-bottom:6px" data-i18n="Pending requests:">Pending requests:</p>
+    {% for r in pending_requests %}
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
+      <span style="color:var(--text-strong);font-size:13px;flex:1">{{ r.name or r.email }}</span>
+      <form method="POST" action="/api/family/accept/{{ r.id }}" style="display:inline"><button type="submit" class="btn btn-sm" style="padding:4px 12px" data-i18n="Accept">Accept</button></form>
+      <form method="POST" action="/api/family/decline/{{ r.id }}" style="display:inline"><button type="submit" class="btn btn-ghost btn-sm" style="padding:4px 12px" data-i18n="Decline">Decline</button></form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if family_members %}
+  <p style="color:var(--muted);font-size:12px;margin-bottom:8px" data-i18n="Shared products with:">Shared products with:</p>
+  {% for m in family_members %}
+  <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;">
+    <span style="color:var(--text-strong)">{{ m.name or m.email }}</span>
+    <span style="color:var(--muted);font-size:11px">({{ m.email }})</span>
+  </div>
+  {% endfor %}
+  <form method="POST" action="/api/family/leave" style="margin-top:8px" onsubmit="return confirm(getLang()==='lt'?'Tikrai norite palikti grupę?':'Leave family group?')">
+    <button type="submit" class="btn btn-ghost btn-sm" data-i18n="Leave Group">Leave Group</button>
+  </form>
+  {% endif %}
+  <form method="POST" action="/api/family/request" style="display:flex;gap:4px;margin-top:10px;">
+    <input name="email" type="email" placeholder="Enter email..." data-i18n-ph="Enter email..." style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
+    <button type="submit" class="btn btn-sm" data-i18n="Send Request">Send Request</button>
+  </form>
+</div>
 
 <script>
 var bleDevice = null;
