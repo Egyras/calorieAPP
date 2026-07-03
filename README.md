@@ -12,7 +12,8 @@ Food calorie & macro tracker with barcode scanning, BLE kitchen scale support, a
 - Meal categorization (breakfast, lunch, dinner, snack)
 - Daily goals with progress bars
 - 30-day history
-- Family sharing — send a request by email, accept/decline on dashboard, shared product library with separate daily logs and goals
+- Recipes — combine products into reusable recipes with gram amounts and optional instructions, log an entire recipe in one click
+- Family sharing — create named groups, invite by email, accept/decline requests, shared product & recipe library with separate daily logs and goals
 - Bilingual interface (Lithuanian / English) with cookie-persistent language toggle
 - Google Sign-In + email-based login
 - SQLite persistent storage
