@@ -122,6 +122,14 @@ def get_pending_requests(db, user_id):
         WHERE fr.to_id=? AND fr.status='pending'
     """, (user_id,)).fetchall()
 
+def get_sent_requests(db, user_id):
+    """Get requests sent BY this user."""
+    return db.execute("""
+        SELECT fr.id, fr.status, u.email, u.name FROM family_request fr
+        JOIN users u ON u.id = fr.to_id
+        WHERE fr.from_id=? AND fr.status IN ('pending','accepted')
+    """, (user_id,)).fetchall()
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -299,7 +307,8 @@ def index():
         user=user, today=today, products=products, top_products=top_products,
         entries=entries, totals=totals, goals=goals,
         family_members=get_family_members(db, uid),
-        pending_requests=get_pending_requests(db, uid))
+        pending_requests=get_pending_requests(db, uid),
+        sent_requests=get_sent_requests(db, uid))
 
 @app.route("/api/jslog", methods=["POST"])
 def js_log():
@@ -506,6 +515,15 @@ def decline_family(req_id):
     uid = session["user_id"]
     db = get_db()
     db.execute("UPDATE family_request SET status='declined' WHERE id=? AND to_id=?", (req_id, uid))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/family/cancel/<int:req_id>", methods=["POST"])
+@login_required
+def cancel_request(req_id):
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("DELETE FROM family_request WHERE id=? AND from_id=?", (req_id, uid))
     db.commit()
     return redirect(request.referrer or url_for("index"))
 
@@ -776,6 +794,9 @@ var TRANSLATIONS = {
   'Enter email...': 'Įveskite el. paštą...',
   'Send Request': 'Siųsti prašymą',
   'Leave Group': 'Palikti grupę',
+  'Sent requests:': 'Išsiųsti prašymai:',
+  'Pending': 'Laukiama',
+  'Accepted': 'Priimta',
   'Today': 'Šiandien',
   'No products yet. Add your first food product to start tracking.': 'Produktų dar nėra. Pridėkite pirmą maisto produktą.',
   '+ Add Products': '+ Pridėti produktus',
@@ -1267,11 +1288,27 @@ document.addEventListener('click',function(e){
     {% endfor %}
   </div>
   {% endif %}
+  {% if sent_requests %}
+  <div style="margin-bottom:12px">
+    <p style="color:var(--muted);font-size:12px;font-weight:600;margin-bottom:6px" data-i18n="Sent requests:">Sent requests:</p>
+    {% for r in sent_requests %}
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
+      <span style="color:var(--text-strong);font-size:13px;flex:1">{{ r.name or r.email }}</span>
+      {% if r.status == 'pending' %}
+      <span style="color:var(--muted);font-size:11px;background:var(--surface3);padding:2px 8px;border-radius:4px" data-i18n="Pending">Pending</span>
+      <form method="POST" action="/api/family/cancel/{{ r.id }}" style="display:inline"><button type="submit" class="btn-ghost btn-sm" title="Cancel">✕</button></form>
+      {% else %}
+      <span style="color:var(--accent);font-size:11px;background:rgba(74,222,128,.1);padding:2px 8px;border-radius:4px" data-i18n="Accepted">Accepted</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if family_members %}
   <p style="color:var(--muted);font-size:12px;margin-bottom:8px" data-i18n="Shared products with:">Shared products with:</p>
   {% for m in family_members %}
   <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;">
-    <span style="color:var(--text-strong)">{{ m.name or m.email }}</span>
+    <span style="color:var(--text-strong);flex:1">{{ m.name or m.email }}</span>
     <span style="color:var(--muted);font-size:11px">({{ m.email }})</span>
   </div>
   {% endfor %}
