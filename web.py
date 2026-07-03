@@ -1057,7 +1057,6 @@ document.addEventListener('DOMContentLoaded', function(){
             var table = document.getElementById('todayLogTable');
             var totalRow = document.getElementById('logTotalRow');
             var tr = document.createElement('tr');
-            tr.style.animation = 'fadeIn .3s ease';
             tr.innerHTML = '<td style="font-weight:500;color:var(--text-strong)">' + data.entry.name + '</td>'
               + '<td>' + data.entry.grams + 'g</td>'
               + '<td><span class="meal-badge meal-' + data.entry.meal + '">' + data.entry.meal + '</span></td>'
@@ -1066,7 +1065,11 @@ document.addEventListener('DOMContentLoaded', function(){
               + '<td class="protein-color">' + data.entry.protein + 'g</td>'
               + '<td class="carbs-color">' + data.entry.carbs + 'g</td>'
               + '<td></td>';
-            table.insertBefore(tr, totalRow);
+            if(totalRow){
+              table.insertBefore(tr, totalRow);
+            } else {
+              table.appendChild(tr);
+            }
           }
           // Update totals display
           if(data.totals){
