@@ -655,6 +655,7 @@ var TRANSLATIONS = {
   'Enter values from the nutrition label, or scan it with your camera.': 'Įveskite reikšmes iš etiketės arba nuskenuokite brūkšninį kodą.',
   'Scan Barcode': 'Skenuoti kodą',
   'Or type barcode...': 'Arba įveskite kodą...',
+  'Filter products...': 'Filtruoti produktus...',
   'Look up': 'Ieškoti',
   'Product Name': 'Produkto pavadinimas',
   'Per (g)': 'Kiekis (g)',
@@ -1276,8 +1277,9 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 {% if products %}
 <div class="card">
   <div class="card-title"><span data-i18n="Your Products">Your Products</span> ({{ products|length }})</div>
+  <input type="text" id="productFilter" oninput="filterProducts()" placeholder="Filter products..." data-i18n-ph="Filter products..." style="width:100%;padding:8px 12px;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
   <div style="overflow-x:auto">
-  <table class="data-table">
+  <table class="data-table" id="productsTable">
     <tr><th data-i18n="Name">Name</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th data-i18n="Per">Per</th><th></th></tr>
     {% for p in products %}
     <tr>
@@ -1324,6 +1326,14 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   </div>
 </div>
 <script>
+function filterProducts(){
+  var q = document.getElementById('productFilter').value.toLowerCase();
+  var rows = document.getElementById('productsTable').querySelectorAll('tr');
+  for(var i = 1; i < rows.length; i++){
+    var name = rows[i].cells[0].textContent.toLowerCase();
+    rows[i].style.display = name.indexOf(q) > -1 ? '' : 'none';
+  }
+}
 function editProduct(id,n,k,f,p,c,pg){
   document.getElementById('editForm').action='/api/products/'+id;
   document.getElementById('eName').value=n;
