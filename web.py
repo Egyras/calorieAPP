@@ -234,7 +234,6 @@ def ensure_default_products(db, user_id):
         ("Agurkai", 15, 0.1, 0.7, 3.6, 100),
         ("Bulves (virtos)", 77, 0.1, 2.0, 17.0, 100),
         ("Vistienos krutinele", 165, 3.6, 31.0, 0.0, 100),
-        ("Grietine 20%", 204, 20.0, 2.8, 3.6, 100),
         ("Juoda duona", 216, 1.3, 6.8, 42.0, 100),
         ("Bananai", 89, 0.3, 1.1, 23.0, 100),
         ("Obuoliai", 52, 0.2, 0.3, 14.0, 100),
