@@ -1065,10 +1065,11 @@ document.addEventListener('DOMContentLoaded', function(){
               + '<td class="protein-color">' + data.entry.protein + 'g</td>'
               + '<td class="carbs-color">' + data.entry.carbs + 'g</td>'
               + '<td></td>';
-            if(totalRow){
-              table.insertBefore(tr, totalRow);
+            if(totalRow && totalRow.parentNode){
+              totalRow.parentNode.insertBefore(tr, totalRow);
             } else {
-              table.appendChild(tr);
+              var tbody = table.querySelector('tbody') || table;
+              tbody.appendChild(tr);
             }
           }
           // Update totals display
