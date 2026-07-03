@@ -104,7 +104,8 @@ def ensure_default_products(db, user_id):
         ("Agurkai", 15, 0.1, 0.7, 3.6, 100),
         ("Bulves (virtos)", 77, 0.1, 2.0, 17.0, 100),
         ("Vistienos krutinele", 165, 3.6, 31.0, 0.0, 100),
-        ("Kiausienis (virtas)", 155, 11.0, 13.0, 1.1, 100),
+        ("Kiausinis virtas", 155, 11.0, 13.0, 1.1, 100),  # Kiaušinis virtas
+        ("Kiausinis zalias", 143, 9.5, 12.6, 0.7, 100),  # Kiaušinis žalias
         ("Varske 9%", 159, 9.0, 16.5, 3.0, 100),
         ("Grietine 20%", 204, 20.0, 2.8, 3.6, 100),
         ("Juoda duona", 216, 1.3, 6.8, 42.0, 100),
@@ -249,27 +250,9 @@ def index():
     for k in totals:
         totals[k] = round(totals[k], 1)
 
-    # Week history for chart
-    week_data = []
-    for i in range(6, -1, -1):
-        d = (date.today() - timedelta(days=i)).isoformat()
-        row = db.execute("""
-            SELECT COALESCE(SUM(p.kcal * dl.grams / p.per_grams), 0) kcal,
-                   COALESCE(SUM(p.protein * dl.grams / p.per_grams), 0) protein,
-                   COALESCE(SUM(p.fat * dl.grams / p.per_grams), 0) fat,
-                   COALESCE(SUM(p.carbs * dl.grams / p.per_grams), 0) carbs
-            FROM daily_log dl JOIN products p ON dl.product_id = p.id
-            WHERE dl.user_id=? AND dl.log_date=?
-        """, (uid, d)).fetchone()
-        week_data.append({"date": d, "kcal": round(row["kcal"], 0),
-                          "protein": round(row["protein"], 1),
-                          "fat": round(row["fat"], 1),
-                          "carbs": round(row["carbs"], 1)})
-
     return render_template_string(MAIN_PAGE,
         user=user, today=today, products=products, top_products=top_products,
-        entries=entries, totals=totals, goals=goals,
-        week_data=json.dumps(week_data))
+        entries=entries, totals=totals, goals=goals)
 
 @app.route("/api/jslog", methods=["POST"])
 def js_log():
@@ -882,7 +865,9 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   var fmt = function(dt){ return dt.toISOString().slice(0,10); };
   document.getElementById('prevDay').href = '/?date=' + fmt(prev);
   document.getElementById('nextDay').href = '/?date=' + fmt(next);
-  var loc = getLang && getLang() === 'lt' ? 'lt-LT' : 'en-US'; var label = d.toLocaleDateString(loc, {weekday:'short', month:'short', day:'numeric'});
+  var loc = getLang && getLang() === 'lt' ? 'lt-LT' : 'en-US';
+  var wd = d.toLocaleDateString(loc, {weekday:'short'});
+  var label = fmt(d) + ', ' + wd;
   if(fmt(d) === fmt(new Date())) label = (loc === 'lt-LT' ? 'Šiandien' : 'Today') + ' — ' + label;
   document.getElementById('dateLabel').textContent = label; document.getElementById('dateLabel').setAttribute('data-date', '{{ today }}');
 })();
@@ -996,35 +981,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
   </div>
 </div>
 
-<!-- WEEK CHART -->
-<div class="card">
-  <div class="card-title" data-i18n="7-Day Trend">7-Day Trend</div>
-  <canvas id="weekChart" height="200"></canvas>
-</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-var wdata = {{ week_data|safe }};
-new Chart(document.getElementById('weekChart'), {
-  type: 'bar',
-  data: {
-    labels: wdata.map(function(d){ var dt=new Date(d.date); return dt.toLocaleDateString(getLang()==='lt'?'lt-LT':'en-US',{month:'short',day:'numeric'}); }),
-    datasets: [
-      {label:'Kcal', data:wdata.map(function(d){return d.kcal;}), backgroundColor:'rgba(74,222,128,.6)', borderRadius:4, yAxisID:'y'},
-      {label:(getLang()==='lt'?'Baltymai':'Protein'), data:wdata.map(function(d){return d.protein;}), backgroundColor:'rgba(59,130,246,.6)', borderRadius:4, yAxisID:'y1'},
-      {label:(getLang()==='lt'?'Riebalai':'Fat'), data:wdata.map(function(d){return d.fat;}), backgroundColor:'rgba(245,158,11,.6)', borderRadius:4, yAxisID:'y1'},
-      {label:(getLang()==='lt'?'Angliavandeniai':'Carbs'), data:wdata.map(function(d){return d.carbs;}), backgroundColor:'rgba(167,139,250,.6)', borderRadius:4, yAxisID:'y1'}
-    ]
-  },
-  options: {
-    responsive:true, interaction:{mode:'index',intersect:false},
-    plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-    scales:{
-      x:{ticks:{color:'#5f6776'},grid:{color:'rgba(255,255,255,.04)'}},
-      y:{position:'left',ticks:{color:'#4ade80'},grid:{color:'rgba(255,255,255,.04)'},title:{display:true,text:'Kcal',color:'#4ade80'}},
-      y1:{position:'right',ticks:{color:'#8b95a8'},grid:{display:false},title:{display:true,text:(getLang()==='lt'?'Gramai':'Grams'),color:'#8b95a8'}}
-    }
-  }
-});
 document.addEventListener('DOMContentLoaded', function(){
   var form = document.getElementById('logForm');
   if(form){
@@ -1059,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', function(){
             var tr = document.createElement('tr');
             tr.innerHTML = '<td style="font-weight:500;color:var(--text-strong)">' + data.entry.name + '</td>'
               + '<td>' + data.entry.grams + 'g</td>'
-              + '<td><span class="meal-badge meal-' + data.entry.meal + '">' + data.entry.meal + '</span></td>'
+              + '<td><span class="meal-badge meal-' + data.entry.meal + '">' + (getLang()==='lt' && TRANSLATIONS[data.entry.meal] ? TRANSLATIONS[data.entry.meal] : data.entry.meal) + '</span></td>'
               + '<td class="kcal-color">' + data.entry.kcal + '</td>'
               + '<td class="fat-color">' + data.entry.fat + 'g</td>'
               + '<td class="protein-color">' + data.entry.protein + 'g</td>'
