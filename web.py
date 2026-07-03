@@ -380,7 +380,14 @@ def add_log():
             FROM daily_log dl JOIN products p ON dl.product_id=p.id
             WHERE dl.user_id=? AND dl.log_date=?
         """, (uid, log_date)).fetchone()
-        return jsonify({"ok": True, "totals": {"kcal": round(row["kcal"],1), "fat": round(row["fat"],1), "protein": round(row["protein"],1), "carbs": round(row["carbs"],1)}})
+        # Get product info for the entry
+        prod = db.execute("SELECT name, kcal, fat, protein, carbs, per_grams FROM products WHERE id=?", (int(data["product_id"]),)).fetchone()
+        g = float(data["grams"])
+        ratio = g / prod["per_grams"]
+        entry = {"name": prod["name"], "grams": g, "meal": data.get("meal","other"),
+                 "kcal": round(prod["kcal"]*ratio,1), "fat": round(prod["fat"]*ratio,1),
+                 "protein": round(prod["protein"]*ratio,1), "carbs": round(prod["carbs"]*ratio,1)}
+        return jsonify({"ok": True, "entry": entry, "totals": {"kcal": round(row["kcal"],1), "fat": round(row["fat"],1), "protein": round(row["protein"],1), "carbs": round(row["carbs"],1)}})
     log_date = request.form.get("log_date", date.today().isoformat())
     db.execute("INSERT INTO daily_log (user_id, product_id, grams, log_date, meal) VALUES (?,?,?,?,?)",
                (uid, int(request.form["product_id"]),
@@ -958,12 +965,12 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
 {% endif %}
 
 <!-- TODAY'S LOG -->
-{% if entries %}
-<div class="card">
+<div class="card" id="todayLogCard" {% if not entries %}style="display:none"{% endif %}>
   <div class="card-title" data-i18n="Today's Log">Today\'s Log</div>
   <div style="overflow-x:auto">
-  <table class="data-table">
+  <table class="data-table" id="todayLogTable">
     <tr><th data-i18n="Food">Food</th><th data-i18n="Grams">Grams</th><th data-i18n="Meal">Meal</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th></th></tr>
+    {% if entries %}
     {% for e in entries %}
     <tr>
       <td style="font-weight:500;color:var(--text-strong)">{{ e.name }}</td>
@@ -976,18 +983,18 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
       <td><form method="POST" action="/api/log/{{ e.id }}/delete" style="display:inline"><button type="submit" class="btn-ghost btn-sm" title="Remove" data-i18n-title="Remove">✕</button></form></td>
     </tr>
     {% endfor %}
-    <tr style="font-weight:600;border-top:2px solid var(--border-strong)">
+    {% endif %}
+    <tr id="logTotalRow" style="font-weight:600;border-top:2px solid var(--border-strong)">
       <td colspan="3" style="color:var(--text-strong)" data-i18n="Total">Total</td>
-      <td class="kcal-color">{{ totals.kcal }}</td>
-      <td class="fat-color">{{ totals.fat }}g</td>
-      <td class="protein-color">{{ totals.protein }}g</td>
-      <td class="carbs-color">{{ totals.carbs }}g</td>
+      <td class="kcal-color" id="logTotalKcal">{{ totals.kcal }}</td>
+      <td class="fat-color" id="logTotalFat">{{ totals.fat }}g</td>
+      <td class="protein-color" id="logTotalProtein">{{ totals.protein }}g</td>
+      <td class="carbs-color" id="logTotalCarbs">{{ totals.carbs }}g</td>
       <td></td>
     </tr>
   </table>
   </div>
 </div>
-{% endif %}
 
 <!-- WEEK CHART -->
 <div class="card">
@@ -1043,6 +1050,24 @@ document.addEventListener('DOMContentLoaded', function(){
           document.getElementById('gramsInput').value = '';
           document.getElementById('productSearch').value = '';
           document.getElementById('productSelectValue').value = '';
+          // Add row to today's log
+          if(data.entry){
+            var card = document.getElementById('todayLogCard');
+            card.style.display = '';
+            var table = document.getElementById('todayLogTable');
+            var totalRow = document.getElementById('logTotalRow');
+            var tr = document.createElement('tr');
+            tr.style.animation = 'fadeIn .3s ease';
+            tr.innerHTML = '<td style="font-weight:500;color:var(--text-strong)">' + data.entry.name + '</td>'
+              + '<td>' + data.entry.grams + 'g</td>'
+              + '<td><span class="meal-badge meal-' + data.entry.meal + '">' + data.entry.meal + '</span></td>'
+              + '<td class="kcal-color">' + data.entry.kcal + '</td>'
+              + '<td class="fat-color">' + data.entry.fat + 'g</td>'
+              + '<td class="protein-color">' + data.entry.protein + 'g</td>'
+              + '<td class="carbs-color">' + data.entry.carbs + 'g</td>'
+              + '<td></td>';
+            table.insertBefore(tr, totalRow);
+          }
           // Update totals display
           if(data.totals){
             var kcalEl = document.getElementById('totalKcal');
@@ -1053,6 +1078,15 @@ document.addEventListener('DOMContentLoaded', function(){
             if(proteinEl) proteinEl.textContent = data.totals.protein.toFixed(1) + 'g';
             var carbsEl = document.getElementById('totalCarbs');
             if(carbsEl) carbsEl.textContent = data.totals.carbs.toFixed(1) + 'g';
+            // Update log table totals too
+            var ltk = document.getElementById('logTotalKcal');
+            if(ltk) ltk.textContent = data.totals.kcal;
+            var ltf = document.getElementById('logTotalFat');
+            if(ltf) ltf.textContent = data.totals.fat.toFixed(1) + 'g';
+            var ltp = document.getElementById('logTotalProtein');
+            if(ltp) ltp.textContent = data.totals.protein.toFixed(1) + 'g';
+            var ltc = document.getElementById('logTotalCarbs');
+            if(ltc) ltc.textContent = data.totals.carbs.toFixed(1) + 'g';
           }
         }
       }).catch(function(err){
