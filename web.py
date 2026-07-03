@@ -921,7 +921,7 @@ var TRANSLATIONS = {
   'Accepted': 'Priimta',
   'Invite': 'Pakviesti',
   'Invite by email...': 'Pakviesti el. paštu...',
-  'New group name...': 'Naujos grupės pavadinimas...',
+  'e.g. Family, Friends...': 'pvz. Šeima, Draugai...',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
@@ -1460,7 +1460,7 @@ document.addEventListener('click',function(e){
   </div>
   {% endfor %}
   <form method="POST" action="/api/group/create" style="display:flex;gap:4px;margin-top:8px;">
-    <input name="name" type="text" placeholder="New group name..." data-i18n-ph="New group name..." required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
+    <input name="name" type="text" placeholder="e.g. Family, Friends..." data-i18n-ph="e.g. Family, Friends..." required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
     <button type="submit" class="btn btn-sm" data-i18n="+ Create">+ Create</button>
   </form>
 </div>
@@ -1698,9 +1698,9 @@ RECIPES_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 <details id="createRecipeDetails" style="margin-bottom:16px;">
 <summary class="btn" style="cursor:pointer;" data-i18n="Create Recipe">Create Recipe</summary>
 <form id="createRecipeForm" action="/api/recipe" method="POST">
-  <input type="text" name="name" placeholder="Recipe name" data-i18n-placeholder="Recipe Name" required
+  <input type="text" name="name" placeholder="Recipe name" data-i18n-ph="Recipe Name" required
     style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:14px;margin-bottom:8px;box-sizing:border-box;">
-  <textarea name="instructions" placeholder="Instructions (optional)" data-i18n-placeholder="Instructions (optional)"
+  <textarea name="instructions" placeholder="Instructions (optional)" data-i18n-ph="Instructions (optional)"
     style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;margin-bottom:8px;box-sizing:border-box;min-height:60px;resize:vertical;"></textarea>
   <div id="ingredientList"></div>
   <button type="button" onclick="addIngredient()" class="btn btn-outline" style="margin-bottom:10px;font-size:13px;" data-i18n="Add Ingredient">Add Ingredient</button>
