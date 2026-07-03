@@ -1466,18 +1466,7 @@ document.addEventListener('click',function(e){
 </div>
 
 <!-- GROUPS -->
-{% if pending_requests %}
-<div class="card">
-  <div class="card-title" data-i18n="Pending requests:">Pending requests:</div>
-  {% for r in pending_requests %}
-  <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
-    <span style="color:var(--text-strong);font-size:13px;flex:1">{{ r.name or r.email }} → <span style="color:var(--accent)">{{ r.group_name }}</span></span>
-    <form method="POST" action="/api/group/accept/{{ r.id }}" style="display:inline"><button type="submit" class="btn btn-sm" style="padding:4px 12px" data-i18n="Accept">Accept</button></form>
-    <form method="POST" action="/api/group/decline/{{ r.id }}" style="display:inline"><button type="submit" class="btn btn-ghost btn-sm" style="padding:4px 12px" data-i18n="Decline">Decline</button></form>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+
 
 
 
@@ -1506,13 +1495,18 @@ document.addEventListener('click',function(e){
     {% for sr in sent_requests if sr.group_name == g.name %}
     <div style="font-size:12px;color:var(--muted);padding:2px 0;display:flex;align-items:center;gap:6px;">
       <span style="flex:1">{{ sr.name or sr.email }}</span>
-      {% if sr.status == 'pending' %}
       <span style="font-size:10px;background:var(--surface3);padding:1px 6px;border-radius:4px" data-i18n="Pending">Pending</span>
       <form method="POST" action="/api/group/cancel/{{ sr.id }}" style="display:inline"><button type="submit" class="btn-ghost btn-sm" style="font-size:10px;padding:2px 6px">✕</button></form>
-      {% endif %}
     </div>
     {% endfor %}
-    {% if g.members|length == 0 and not sent_requests|selectattr('group_name','equalto',g.name)|list %}
+    {% for pr in pending_requests if pr.group_name == g.name %}
+    <div style="font-size:12px;padding:3px 0;display:flex;align-items:center;gap:6px;">
+      <span style="flex:1;color:var(--text)">{{ pr.name or pr.email }}</span>
+      <form method="POST" action="/api/group/accept/{{ pr.id }}" style="display:inline"><button type="submit" class="btn btn-sm" style="padding:2px 10px;font-size:11px" data-i18n="Accept">Accept</button></form>
+      <form method="POST" action="/api/group/decline/{{ pr.id }}" style="display:inline"><button type="submit" class="btn btn-ghost btn-sm" style="padding:2px 10px;font-size:11px" data-i18n="Decline">Decline</button></form>
+    </div>
+    {% endfor %}
+    {% if g.members|length == 0 and not sent_requests|selectattr('group_name','equalto',g.name)|list and not pending_requests|selectattr('group_name','equalto',g.name)|list %}
     <div style="font-size:12px;color:var(--muted);font-style:italic;padding:2px 0;" data-i18n="No members yet">No members yet</div>
     {% endif %}
     <form method="POST" action="/api/group/{{ g.id }}/invite" style="display:flex;gap:4px;margin-top:6px;">
@@ -1521,7 +1515,17 @@ document.addEventListener('click',function(e){
     </form>
   </div>
   {% endfor %}
-
+  {% for pr in pending_requests %}
+    {% set ns = namespace(matched=false) %}
+    {% for g in user_groups if g.name == pr.group_name %}{% set ns.matched = true %}{% endfor %}
+    {% if not ns.matched %}
+    <div style="margin-bottom:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;gap:6px;">
+      <span style="font-size:13px;color:var(--text);flex:1">{{ pr.name or pr.email }} → <span style="color:var(--accent)" data-i18n="{{ pr.group_name }}">{{ pr.group_name }}</span></span>
+      <form method="POST" action="/api/group/accept/{{ pr.id }}" style="display:inline"><button type="submit" class="btn btn-sm" style="padding:2px 10px;font-size:11px" data-i18n="Accept">Accept</button></form>
+      <form method="POST" action="/api/group/decline/{{ pr.id }}" style="display:inline"><button type="submit" class="btn btn-ghost btn-sm" style="padding:2px 10px;font-size:11px" data-i18n="Decline">Decline</button></form>
+    </div>
+    {% endif %}
+  {% endfor %}
 </div>
 
 <script>
