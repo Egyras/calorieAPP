@@ -168,6 +168,18 @@ def get_sent_requests(db, user_id):
         WHERE gr.from_id=? AND gr.status IN ('pending','accepted')
     """, (user_id,)).fetchall()
 
+def ensure_default_groups(db, user_id):
+    """Create Family and Friends groups for user if they don't exist."""
+    for gname in ("Family", "Friends"):
+        existing = db.execute("""
+            SELECT g.id FROM groups g
+            JOIN group_members gm ON gm.group_id = g.id
+            WHERE gm.user_id=? AND g.name=? AND g.created_by=?
+        """, (user_id, gname, user_id)).fetchone()
+        if not existing:
+            cur = db.execute("INSERT INTO groups (name, created_by) VALUES (?,?)", (gname, user_id))
+            db.execute("INSERT INTO group_members (group_id, user_id) VALUES (?,?)", (cur.lastrowid, user_id))
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -247,12 +259,14 @@ def google_auth():
             db.execute("UPDATE users SET name=?, picture=? WHERE id=?",
                        (idinfo.get("name"), idinfo.get("picture"), user["id"]))
             ensure_default_products(db, user["id"])
+            ensure_default_groups(db, user["id"])
         else:
             cur = db.execute("INSERT INTO users (email, name, picture) VALUES (?,?,?)",
                              (email, idinfo.get("name"), idinfo.get("picture")))
             session["user_id"] = cur.lastrowid
             db.execute("INSERT INTO daily_goals (user_id) VALUES (?)", (cur.lastrowid,))
             ensure_default_products(db, cur.lastrowid)
+            ensure_default_groups(db, cur.lastrowid)
         db.commit()
         if request.is_json:
             return jsonify({"ok": True})
@@ -276,11 +290,13 @@ def dev_auth():
     if user:
         session["user_id"] = user["id"]
         ensure_default_products(db, user["id"])
+        ensure_default_groups(db, user["id"])
     else:
         cur = db.execute("INSERT INTO users (email, name) VALUES (?,?)", (email, email.split("@")[0]))
         session["user_id"] = cur.lastrowid
         db.execute("INSERT INTO daily_goals (user_id) VALUES (?)", (cur.lastrowid,))
         ensure_default_products(db, cur.lastrowid)
+        ensure_default_groups(db, cur.lastrowid)
     db.commit()
     return redirect(url_for("index"))
 
@@ -921,7 +937,8 @@ var TRANSLATIONS = {
   'Accepted': 'Priimta',
   'Invite': 'Pakviesti',
   'Invite by email...': 'Pakviesti el. paštu...',
-  'e.g. Family, Friends...': 'pvz. Šeima, Draugai...',
+  'Family': 'Šeima',
+  'Friends': 'Draugai',,
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
@@ -1445,10 +1462,12 @@ document.addEventListener('click',function(e){
   {% for g in user_groups %}
   <div style="margin-bottom:12px;padding:10px;background:var(--surface2);border-radius:8px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <span style="font-weight:600;color:var(--accent-bright);font-size:14px">{{ g.name }}</span>
+      <span style="font-weight:600;color:var(--accent-bright);font-size:14px" data-i18n="{{ g.name }}">{{ g.name }}</span>
+      {% if g.created_by != session.get('user_id') %}
       <form method="POST" action="/api/group/{{ g.id }}/leave" style="margin-left:auto;display:inline" onsubmit="return confirm(getLang()==='lt'?'Palikti grupę {{ g.name }}?':'Leave {{ g.name }}?')">
         <button type="submit" class="btn-ghost btn-sm" title="Leave">✕</button>
       </form>
+      {% endif %}
     </div>
     {% for m in g.members %}
     <div style="font-size:12px;color:var(--muted);padding:2px 0;">{{ m.name or m.email }}</div>
@@ -1459,10 +1478,7 @@ document.addEventListener('click',function(e){
     </form>
   </div>
   {% endfor %}
-  <form method="POST" action="/api/group/create" style="display:flex;gap:4px;margin-top:8px;">
-    <input name="name" type="text" placeholder="e.g. Family, Friends..." data-i18n-ph="e.g. Family, Friends..." required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;">
-    <button type="submit" class="btn btn-sm" data-i18n="+ Create">+ Create</button>
-  </form>
+
 </div>
 
 <script>
