@@ -1123,7 +1123,10 @@ a{color:var(--accent-bright);text-decoration:none;}
   .container{padding:1rem;}
   .form-row{flex-direction:column;}
   .form-group{min-width:100%!important;}
-  .nav{padding:0 1rem;}
+  .nav{padding:0 0.5rem;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .nav-links{gap:2px;}
+  .nav-link{padding:6px 6px;font-size:12px;gap:3px;}
+  .nav-brand-name{display:none;}
   .hide-mobile{display:none!important;}
 }
 
@@ -2352,6 +2355,41 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
         </form>
       </td>
  
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);font-style:italic" data-i18n="No products yet">No products yet</p>
+  {% endif %}
+</div>
+</div>
+
+<script>
+function filterProducts(){var f=document.getElementById('productFilter').value.toLowerCase();var rows=document.querySelectorAll('#productsTable tr');for(var i=1;i<rows.length;i++){rows[i].style.display=rows[i].textContent.toLowerCase().includes(f)?'':'none';}}
+function editProduct(id,name,kcal,fat,protein,carbs,per){document.getElementById('pName').value=name;document.getElementById('pKcal').value=kcal;document.getElementById('pFat').value=fat;document.getElementById('pProtein').value=protein;document.getElementById('pCarbs').value=carbs;document.getElementById('pPer').value=per;var form=document.getElementById('addProductForm');form.action='/api/products/'+id+'/edit';form.scrollIntoView({behavior:'smooth'});}
+</script>
+</body></html>"""
+
+HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>History - CalorieTracker</title>""" + STYLE + """</head><body>
+""" + NAV.replace("active=='history'", "True") + """
+<div class="container">
+<div class="card">
+  <div class="card-title" data-i18n="Daily History (Last 30 Days)">Daily History (Last 30 Days)</div>
+  {% if days %}
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <tr><th data-i18n="Date">Date</th><th data-i18n="Items">Items</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th></th></tr>
+    {% for d in days %}
+    <tr>
+      <td style="font-weight:500;color:var(--text-strong)">{{ d.log_date }}</td>
+      <td>{{ d.items }}</td>
+      <td class="kcal-color">{{ d.kcal|int }}{% if goals %} <span style="color:var(--muted);font-size:11px">/ {{ goals.kcal|int }}</span>{% endif %}</td>
+      <td class="fat-color">{{ d.fat }}g</td>
+      <td class="protein-color">{{ d.protein }}g</td>
+      <td class="carbs-color">{{ d.carbs }}g</td>
+      <td><a href="/?date={{ d.log_date }}" class="btn-ghost btn-sm" style="display:inline-block;text-decoration:none" data-i18n="View">View</a></td>
     </tr>
     {% endfor %}
   </table>
