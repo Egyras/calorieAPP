@@ -350,7 +350,7 @@ def admin_page():
         return redirect(url_for("index"))
     emails = db.execute("SELECT email, added_at FROM allowed_emails ORDER BY email").fetchall()
     lang = request.cookies.get("lang", "en")
-    return render_template_string(ADMIN_PAGE, user=user, emails=emails, active="admin")
+    return render_template_string(ADMIN_PAGE, user=user, emails=emails, active="admin", admin_emails=ADMIN_EMAILS)
 
 @app.route("/api/admin/add-email", methods=["POST"])
 @login_required
@@ -378,7 +378,7 @@ def admin_remove_email():
         return redirect(url_for("index"))
     email = request.form.get("email", "").strip().lower()
     # Don't allow removing yourself
-    if email and email != user["email"]:
+    if email and email not in ADMIN_EMAILS:
         db.execute("DELETE FROM allowed_emails WHERE email=?", (email,))
         db.commit()
     return redirect(url_for("admin_page"))
@@ -1935,11 +1935,13 @@ ADMIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
   <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
     <span style="flex:1;font-size:13px;color:var(--text)">{{ e.email }}</span>
     <span style="font-size:11px;color:var(--muted)">{{ e.added_at[:10] if e.added_at else '' }}</span>
-    {% if e.email != user.email %}
+    {% if e.email not in admin_emails %}
     <form method="POST" action="/api/admin/remove-email" style="display:inline" onsubmit="return confirm('Remove {{ e.email }}?')">
       <input type="hidden" name="email" value="{{ e.email }}">
       <button type="submit" class="btn-ghost btn-sm" style="font-size:10px;padding:2px 6px">✕</button>
     </form>
+    {% else %}
+    <span style="font-size:10px;color:var(--muted)">admin</span>
     {% endif %}
   </div>
   {% endfor %}
