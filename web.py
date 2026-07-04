@@ -2377,4 +2377,4 @@ PENDING_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 </body></html>"""
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5555, debug=(not GOOGLE_CLIENT_ID))
+    app.run(host="0.0.0.0", port=8080, debug=(not GOOGLE_CLIENT_ID))
