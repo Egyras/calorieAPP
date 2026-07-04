@@ -2455,7 +2455,7 @@ function applyInviteLang(){
     document.getElementById('invTitle').textContent='Jus pakviesti!';
     document.getElementById('invDesc').textContent='Jus pakvieste naudoti CalorieTracker - mitybos sekimo programele kaloriju, baltymu, riebalu ir angliavandeniu fiksavimui.';
     document.getElementById('invHow').textContent='Kaip tai veikia:';
-    document.getElementById('invSteps').innerHTML='1. Prisijunkite su Google paskyra arba el. pastu.\n2. Jusu prasymas bus issiustas administratoriui.\n3. Kai administratorius patvirtins, galesite prisijungti ir pradeti sekti miityba.'.replace(/\n/g,'<br>');
+    document.getElementById('invSteps').innerHTML='1. Prisijunkite su Google paskyra arba el. pastu.<br>2. Jusu prasymas bus issiustas administratoriui.<br>3. Kai administratorius patvirtins, galesite prisijungti ir pradeti sekti mityba.';
     document.getElementById('invNote').textContent='Pastaba: Netursite prieigos kol administratorius nepatvirtins jusu prasymo.';
     document.getElementById('invEmail').textContent='Arba prisijunkite el. pastu:';
     document.getElementById('invSignIn').textContent='Prisijungti';
