@@ -1218,10 +1218,10 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
 <title>CalorieTracker — Login</title>""" + STYLE + """
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head><body>
-<nav class="nav"><div class="nav-brand"><div class="nav-brand-icon">🔥</div><span class="nav-brand-name">CalorieTracker</span></div></nav>
+<nav class="nav" style="position:relative"><div class="nav-brand"><div class="nav-brand-icon">🔥</div><span class="nav-brand-name">CalorieTracker</span></div><div style="position:absolute;right:16px;top:50%;transform:translateY(-50%)"><button onclick="toggleLoginLang()" id="loginLangBtn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">LT</button></div></nav>
 <div class="login-wrap">
-  <h1>Track Your Nutrition</h1>
-  <p class="sub">Log calories, protein, fat & carbs from food labels. See daily totals and weekly trends.</p>
+  <h1 data-i18n="Track Your Nutrition">Track Your Nutrition</h1>
+  <p class="sub" data-i18n="Log calories, protein, fat & carbs from food labels. See daily totals and weekly trends.">Log calories, protein, fat & carbs from food labels. See daily totals and weekly trends.</p>
   <div class="login-card">
     <div id="g_id_onload"
          data-client_id="{{ google_client_id }}"
@@ -1240,31 +1240,71 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
   }
   </script>
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
-    <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;">Google login not working? Sign in with email:</p>
+    <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" data-i18n="Google login not working? Sign in with email:">Google login not working? Sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
-      <input name="email" type="email" placeholder="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
-      <button type="submit" class="btn" style="white-space:nowrap;">Sign In</button>
+      <input name="email" type="email" placeholder="your@email.com" data-i18n-ph="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <button type="submit" class="btn" style="white-space:nowrap;" data-i18n="Sign In">Sign In</button>
     </form>
   </div>
 </div>
+
+<script>
+function getLang(){try{return localStorage.getItem('lang')||document.cookie.replace(/(?:(?:^|.*;\s*)lang\s*=\s*([^;]*).*$)|^.*$/,'$1')||'en'}catch(e){return'en'}}
+function setLang(l){try{localStorage.setItem('lang',l)}catch(e){}document.cookie='lang='+l+';path=/;max-age=31536000'}
+function toggleLoginLang(){var l=getLang()==='lt'?'en':'lt';setLang(l);applyLoginLang();}
+function applyLoginLang(){
+  var l=getLang();
+  document.getElementById('loginLangBtn').textContent=l==='lt'?'EN':'LT';
+  var t={'Track Your Nutrition':'Sekite savo mitybą','Log calories, protein, fat & carbs from food labels. See daily totals and weekly trends.':'Fiksuokite kalorijas, baltymus, riebalus ir angliavandenius iš maisto etikečių.','Google login not working? Sign in with email:':'Google prisijungimas neveikia? Prisijunkite el. paštu:','Sign In':'Prisijungti','Google OAuth not configured. Using dev login.':'Google OAuth nesukonfigūruotas. Naudojamas dev prisijungimas.','Sign In (Dev Mode)':'Prisijungti (Dev režimas)','Email':'El. paštas'};
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var k=el.getAttribute('data-i18n');
+    el.textContent=l==='lt'?(t[k]||k):k;
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function(el){
+    var k=el.getAttribute('data-i18n-ph');
+    el.placeholder=l==='lt'?(t[k]||k):k;
+  });
+}
+document.addEventListener('DOMContentLoaded',applyLoginLang);
+</script>
 </body></html>"""
 
 LOGIN_NO_OAUTH = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CalorieTracker — Login</title>""" + STYLE + """</head><body>
-<nav class="nav"><div class="nav-brand"><div class="nav-brand-icon">🔥</div><span class="nav-brand-name">CalorieTracker</span></div></nav>
+<nav class="nav" style="position:relative"><div class="nav-brand"><div class="nav-brand-icon">🔥</div><span class="nav-brand-name">CalorieTracker</span></div><div style="position:absolute;right:16px;top:50%;transform:translateY(-50%)"><button onclick="toggleLoginLang()" id="loginLangBtn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">LT</button></div></nav>
 <div class="login-wrap">
-  <h1>Track Your Nutrition</h1>
-  <p class="sub">Google OAuth not configured. Using dev login.</p>
+  <h1 data-i18n="Track Your Nutrition">Track Your Nutrition</h1>
+  <p class="sub" data-i18n="Google OAuth not configured. Using dev login.">Google OAuth not configured. Using dev login.</p>
   <div class="login-card">
     <form method="POST" action="/auth/dev">
       <div class="form-group" style="margin-bottom:1rem">
-        <label>Email</label>
+        <label data-i18n="Email">Email</label>
         <input name="email" value="dev@localhost" required>
       </div>
-      <button type="submit" class="btn" style="width:100%">Sign In (Dev Mode)</button>
+      <button type="submit" class="btn" style="width:100%" data-i18n="Sign In (Dev Mode)">Sign In (Dev Mode)</button>
     </form>
   </div>
 </div>
+
+<script>
+function getLang(){try{return localStorage.getItem('lang')||document.cookie.replace(/(?:(?:^|.*;\s*)lang\s*=\s*([^;]*).*$)|^.*$/,'$1')||'en'}catch(e){return'en'}}
+function setLang(l){try{localStorage.setItem('lang',l)}catch(e){}document.cookie='lang='+l+';path=/;max-age=31536000'}
+function toggleLoginLang(){var l=getLang()==='lt'?'en':'lt';setLang(l);applyLoginLang();}
+function applyLoginLang(){
+  var l=getLang();
+  document.getElementById('loginLangBtn').textContent=l==='lt'?'EN':'LT';
+  var t={'Track Your Nutrition':'Sekite savo mitybą','Log calories, protein, fat & carbs from food labels. See daily totals and weekly trends.':'Fiksuokite kalorijas, baltymus, riebalus ir angliavandenius iš maisto etikečių.','Google login not working? Sign in with email:':'Google prisijungimas neveikia? Prisijunkite el. paštu:','Sign In':'Prisijungti','Google OAuth not configured. Using dev login.':'Google OAuth nesukonfigūruotas. Naudojamas dev prisijungimas.','Sign In (Dev Mode)':'Prisijungti (Dev režimas)','Email':'El. paštas'};
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var k=el.getAttribute('data-i18n');
+    el.textContent=l==='lt'?(t[k]||k):k;
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function(el){
+    var k=el.getAttribute('data-i18n-ph');
+    el.placeholder=l==='lt'?(t[k]||k):k;
+  });
+}
+document.addEventListener('DOMContentLoaded',applyLoginLang);
+</script>
 </body></html>"""
 
 MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
