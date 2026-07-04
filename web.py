@@ -414,7 +414,8 @@ def invite_landing(token):
         flash("Invalid or expired invite link.")
         return redirect(url_for("login"))
     session["invite_token"] = token
-    return redirect(url_for("login"))
+    lang = request.cookies.get("lang", "en")
+    return render_template_string(INVITE_PAGE, token=token, lang=lang, google_client_id=GOOGLE_CLIENT_ID)
 
 @app.route("/api/invite/generate", methods=["POST"])
 @login_required
@@ -2399,6 +2400,78 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   {% endif %}
 </div>
 </div></body></html>"""
+
+INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CalorieTracker - Invite</title>""" + STYLE + """
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head><body>
+<nav class="nav" style="position:relative"><div class="nav-brand"><div class="nav-brand-icon">&#x1F525;</div><span class="nav-brand-name">CalorieTracker</span></div>
+<div style="position:absolute;right:16px;top:50%;transform:translateY(-50%)"><button onclick="toggleInviteLang()" id="invLangBtn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">LT</button></div>
+</nav>
+<div class="login-wrap">
+  <div style="text-align:center;padding:20px 20px 0;">
+    <div style="font-size:48px;margin-bottom:12px;">&#x1F44B;</div>
+    <h2 style="color:var(--text);margin-bottom:12px;" id="invTitle">You've been invited!</h2>
+    <p style="color:var(--muted);font-size:14px;max-width:400px;margin:0 auto 8px;" id="invDesc">You have been invited to use CalorieTracker - a nutrition tracking app for logging calories, protein, fat and carbs.</p>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin:16px auto;max-width:400px;text-align:left;">
+      <p style="color:var(--accent);font-size:13px;font-weight:600;margin-bottom:6px;" id="invHow">How it works:</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;" id="invSteps">1. Sign in with your Google account or email below.<br>2. Your request will be sent to the administrator.<br>3. Once approved, you can log in and start tracking.</p>
+    </div>
+    <p style="color:var(--muted);font-size:11px;font-style:italic;margin-bottom:16px;" id="invNote">Note: You will not have access until an administrator approves your request.</p>
+  </div>
+  <div class="login-card">
+    <div id="g_id_onload"
+         data-client_id="{{ google_client_id }}"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false"></div>
+    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="pill" data-width="300"></div>
+  </div>
+  <script>
+  function handleCredentialResponse(response) {
+    fetch("/auth/google", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({credential: response.credential}),
+      credentials: "same-origin"
+    }).then(function(r){ window.location.href = "/"; });
+  }
+  </script>
+  <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
+    <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" id="invEmail">Or sign in with email:</p>
+    <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
+      <input name="email" type="email" placeholder="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <button type="submit" class="btn" style="white-space:nowrap;" id="invSignIn">Sign In</button>
+    </form>
+  </div>
+</div>
+<script>
+function getLang(){try{return localStorage.getItem('lang')||document.cookie.replace(/(?:(?:^|.*;\s*)lang\s*=\s*([^;]*).*$)|^.*$/,'$1')||'en'}catch(e){return'en'}}
+function setLang(l){try{localStorage.setItem('lang',l)}catch(e){}document.cookie='lang='+l+';path=/;max-age=31536000'}
+function toggleInviteLang(){var l=getLang()==='lt'?'en':'lt';setLang(l);applyInviteLang();}
+function applyInviteLang(){
+  var l=getLang();
+  document.getElementById('invLangBtn').textContent=l==='lt'?'EN':'LT';
+  if(l==='lt'){
+    document.getElementById('invTitle').textContent='Jus pakviesti!';
+    document.getElementById('invDesc').textContent='Jus pakvieste naudoti CalorieTracker - mitybos sekimo programele kaloriju, baltymu, riebalu ir angliavandeniu fiksavimui.';
+    document.getElementById('invHow').textContent='Kaip tai veikia:';
+    document.getElementById('invSteps').innerHTML='1. Prisijunkite su Google paskyra arba el. pastu.\n2. Jusu prasymas bus issiustas administratoriui.\n3. Kai administratorius patvirtins, galesite prisijungti ir pradeti sekti miityba.'.replace(/\n/g,'<br>');
+    document.getElementById('invNote').textContent='Pastaba: Netursite prieigos kol administratorius nepatvirtins jusu prasymo.';
+    document.getElementById('invEmail').textContent='Arba prisijunkite el. pastu:';
+    document.getElementById('invSignIn').textContent='Prisijungti';
+  } else {
+    document.getElementById('invTitle').textContent="You've been invited!";
+    document.getElementById('invDesc').textContent='You have been invited to use CalorieTracker - a nutrition tracking app for logging calories, protein, fat and carbs.';
+    document.getElementById('invHow').textContent='How it works:';
+    document.getElementById('invSteps').innerHTML='1. Sign in with your Google account or email below.<br>2. Your request will be sent to the administrator.<br>3. Once approved, you can log in and start tracking.';
+    document.getElementById('invNote').textContent='Note: You will not have access until an administrator approves your request.';
+    document.getElementById('invEmail').textContent='Or sign in with email:';
+    document.getElementById('invSignIn').textContent='Sign In';
+  }
+}
+document.addEventListener('DOMContentLoaded',applyInviteLang);
+</script>
+</body></html>"""
 
 PENDING_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CalorieTracker — Pending</title>""" + STYLE + """</head><body>
