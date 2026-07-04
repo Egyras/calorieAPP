@@ -2452,12 +2452,12 @@ function applyInviteLang(){
   var l=getLang();
   document.getElementById('invLangBtn').textContent=l==='lt'?'EN':'LT';
   if(l==='lt'){
-    document.getElementById('invTitle').textContent='Jus pakviesti!';
-    document.getElementById('invDesc').textContent='Jus pakvieste naudoti CalorieTracker - mitybos sekimo programele kaloriju, baltymu, riebalu ir angliavandeniu fiksavimui.';
+    document.getElementById('invTitle').textContent='Jūs pakviesti!';
+    document.getElementById('invDesc').textContent='Jūs pakviesti naudoti CalorieTracker – mitybos sekimo programėlę kalorijų, baltymų, riebalų ir angliavandenių fiksavimui.';
     document.getElementById('invHow').textContent='Kaip tai veikia:';
-    document.getElementById('invSteps').innerHTML='1. Prisijunkite su Google paskyra arba el. pastu.<br>2. Jusu prasymas bus issiustas administratoriui.<br>3. Kai administratorius patvirtins, galesite prisijungti ir pradeti sekti mityba.';
-    document.getElementById('invNote').textContent='Pastaba: Netursite prieigos kol administratorius nepatvirtins jusu prasymo.';
-    document.getElementById('invEmail').textContent='Arba prisijunkite el. pastu:';
+    document.getElementById('invSteps').innerHTML='1. Prisijunkite su Google paskyra arba el. paštu.<br>2. Jūsų prašymas bus išsiųstas administratoriui.<br>3. Kai administratorius patvirtins, galėsite prisijungti ir pradėti sekti mitybą.';
+    document.getElementById('invNote').textContent='Pastaba: Neturėsite prieigos, kol administratorius nepatvirtins jūsų prašymo.';
+    document.getElementById('invEmail').textContent='Arba prisijunkite el. paštu:';
     document.getElementById('invSignIn').textContent='Prisijungti';
   } else {
     document.getElementById('invTitle').textContent="You've been invited!";
