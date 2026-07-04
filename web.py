@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Calorie Tracker — Flask web app with Google OAuth and macro tracking."""
-import os, sys, json, sqlite3, functools
+import os, sys, json, sqlite3, functools, secrets
 from datetime import datetime, date, timedelta
 from flask import Flask, render_template_string, request, g, jsonify, redirect, url_for, session, flash
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -104,6 +104,24 @@ def get_db():
                 added_by INTEGER,
                 added_at TEXT DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS invite_tokens (
+                token TEXT PRIMARY KEY,
+                created_by INTEGER NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                is_active INTEGER DEFAULT 1,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+            CREATE TABLE IF NOT EXISTS pending_approvals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                name TEXT,
+                picture TEXT,
+                invite_token TEXT,
+                requested_at TEXT DEFAULT (datetime('now')),
+                status TEXT DEFAULT 'pending',
+                reviewed_by INTEGER,
+                FOREIGN KEY (invite_token) REFERENCES invite_tokens(token)
+            );
             CREATE TABLE IF NOT EXISTS recipe_items (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 recipe_id  INTEGER NOT NULL,
@@ -119,6 +137,18 @@ def get_db():
         if db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0] == 0:
             for em in ALLOWED_EMAILS:
                 db.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
+        # Migrate: add invite_tokens table
+        db.execute("""CREATE TABLE IF NOT EXISTS invite_tokens (
+            token TEXT PRIMARY KEY, created_by INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')), is_active INTEGER DEFAULT 1,
+            FOREIGN KEY (created_by) REFERENCES users(id))""")
+        # Migrate: add pending_approvals table
+        db.execute("""CREATE TABLE IF NOT EXISTS pending_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL,
+            name TEXT, picture TEXT, invite_token TEXT,
+            requested_at TEXT DEFAULT (datetime('now')), status TEXT DEFAULT 'pending',
+            reviewed_by INTEGER,
+            FOREIGN KEY (invite_token) REFERENCES invite_tokens(token))""")
         # Migrate: add barcode column if missing
         try:
             db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")
@@ -288,6 +318,26 @@ def google_auth():
         db = get_db()
         allowed = db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0]
         if allowed > 0 and not db.execute("SELECT 1 FROM allowed_emails WHERE email=?", (email,)).fetchone():
+            # Check if they have a valid invite token in session
+            inv_token = session.get("invite_token")
+            if inv_token:
+                valid = db.execute("SELECT token, created_by FROM invite_tokens WHERE token=? AND is_active=1", (inv_token,)).fetchone()
+                if valid:
+                    # Check not already pending
+                    existing = db.execute("SELECT id, status FROM pending_approvals WHERE email=?", (email,)).fetchone()
+                    if existing:
+                        if existing["status"] == "declined":
+                            db.execute("UPDATE pending_approvals SET status='pending', name=?, picture=?, invite_token=?, requested_at=datetime('now') WHERE id=?",
+                                       (idinfo.get("name"), idinfo.get("picture"), inv_token, existing["id"]))
+                            db.commit()
+                        # already pending or declined-and-reset
+                    else:
+                        db.execute("INSERT INTO pending_approvals (email, name, picture, invite_token) VALUES (?,?,?,?)",
+                                   (email, idinfo.get("name"), idinfo.get("picture"), inv_token))
+                        db.commit()
+                    session.pop("invite_token", None)
+                    lang = request.cookies.get("lang", "en")
+                    return render_template_string(PENDING_PAGE, email=email, lang=lang)
             flash("Access denied. Your email is not authorized.")
             return redirect(url_for("login"))
         user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
@@ -322,6 +372,23 @@ def dev_auth():
     db = get_db()
     allowed = db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0]
     if allowed > 0 and not db.execute("SELECT 1 FROM allowed_emails WHERE email=?", (email,)).fetchone():
+        inv_token = session.get("invite_token")
+        if inv_token:
+            valid = db.execute("SELECT token FROM invite_tokens WHERE token=? AND is_active=1", (inv_token,)).fetchone()
+            if valid:
+                existing = db.execute("SELECT id, status FROM pending_approvals WHERE email=?", (email,)).fetchone()
+                if existing:
+                    if existing["status"] == "declined":
+                        db.execute("UPDATE pending_approvals SET status='pending', invite_token=?, requested_at=datetime('now') WHERE id=?",
+                                   (inv_token, existing["id"]))
+                        db.commit()
+                else:
+                    db.execute("INSERT INTO pending_approvals (email, name, invite_token) VALUES (?,?,?)",
+                               (email, email.split("@")[0], inv_token))
+                    db.commit()
+                session.pop("invite_token", None)
+                lang = request.cookies.get("lang", "en")
+                return render_template_string(PENDING_PAGE, email=email, lang=lang)
         flash("Access denied. Your email is not authorized.")
         return redirect(url_for("login"))
     user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
@@ -339,6 +406,65 @@ def dev_auth():
     return redirect(url_for("index"))
 
 
+@app.route("/invite/<token>")
+def invite_landing(token):
+    db = get_db()
+    valid = db.execute("SELECT token FROM invite_tokens WHERE token=? AND is_active=1", (token,)).fetchone()
+    if not valid:
+        flash("Invalid or expired invite link.")
+        return redirect(url_for("login"))
+    session["invite_token"] = token
+    return redirect(url_for("login"))
+
+@app.route("/api/invite/generate", methods=["POST"])
+@login_required
+def generate_invite_token():
+    uid = session["user_id"]
+    db = get_db()
+    token = secrets.token_urlsafe(16)
+    db.execute("INSERT INTO invite_tokens (token, created_by) VALUES (?,?)", (token, uid))
+    db.commit()
+    return jsonify({"token": token, "url": request.host_url.rstrip("/") + "/invite/" + token})
+
+@app.route("/api/invite/revoke", methods=["POST"])
+@login_required
+def revoke_invite_token():
+    uid = session["user_id"]
+    db = get_db()
+    token = request.form.get("token", "")
+    db.execute("UPDATE invite_tokens SET is_active=0 WHERE token=? AND created_by=?", (token, uid))
+    db.commit()
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/admin/approve", methods=["POST"])
+@login_required
+def admin_approve():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] not in ADMIN_EMAILS:
+        return redirect(url_for("index"))
+    approval_id = request.form.get("id")
+    pa = db.execute("SELECT email FROM pending_approvals WHERE id=?", (approval_id,)).fetchone()
+    if pa:
+        db.execute("INSERT OR IGNORE INTO allowed_emails (email, added_by) VALUES (?,?)", (pa["email"], uid))
+        db.execute("UPDATE pending_approvals SET status='approved', reviewed_by=? WHERE id=?", (uid, approval_id))
+        db.commit()
+    return redirect(url_for("admin_page"))
+
+@app.route("/api/admin/decline", methods=["POST"])
+@login_required
+def admin_decline():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] not in ADMIN_EMAILS:
+        return redirect(url_for("index"))
+    approval_id = request.form.get("id")
+    db.execute("UPDATE pending_approvals SET status='declined', reviewed_by=? WHERE id=?", (uid, approval_id))
+    db.commit()
+    return redirect(url_for("admin_page"))
+
 @app.route("/admin")
 @login_required
 def admin_page():
@@ -350,7 +476,8 @@ def admin_page():
         return redirect(url_for("index"))
     emails = db.execute("SELECT email, added_at FROM allowed_emails ORDER BY email").fetchall()
     lang = request.cookies.get("lang", "en")
-    return render_template_string(ADMIN_PAGE, user=user, emails=emails, active="admin", admin_emails=ADMIN_EMAILS)
+    pending = db.execute("SELECT pa.*, it.created_by, u.email as invited_by_email FROM pending_approvals pa LEFT JOIN invite_tokens it ON pa.invite_token=it.token LEFT JOIN users u ON u.id=it.created_by WHERE pa.status='pending' ORDER BY pa.requested_at DESC").fetchall()
+    return render_template_string(ADMIN_PAGE, user=user, emails=emails, active="admin", admin_emails=ADMIN_EMAILS, pending=pending)
 
 @app.route("/api/admin/add-email", methods=["POST"])
 @login_required
@@ -439,12 +566,23 @@ def index():
     for k in totals:
         totals[k] = round(totals[k], 1)
 
+    # Get or create invite token for QR code
+    inv_token = db.execute("SELECT token FROM invite_tokens WHERE created_by=? AND is_active=1 ORDER BY created_at DESC LIMIT 1", (uid,)).fetchone()
+    if not inv_token:
+        token = secrets.token_urlsafe(16)
+        db.execute("INSERT INTO invite_tokens (token, created_by) VALUES (?,?)", (token, uid))
+        db.commit()
+    else:
+        token = inv_token["token"]
+    invite_url = request.host_url.rstrip("/") + "/invite/" + token
+
     return render_template_string(MAIN_PAGE,
         user=user, today=today, products=products, top_products=top_products,
         entries=entries, totals=totals, goals=goals,
         user_groups=get_user_groups(db, uid),
         pending_requests=get_pending_requests(db, uid),
-        sent_requests=get_sent_requests(db, uid))
+        sent_requests=get_sent_requests(db, uid),
+        invite_url=invite_url)
 
 @app.route("/api/jslog", methods=["POST"])
 def js_log():
@@ -1066,6 +1204,9 @@ var TRANSLATIONS = {
   'Allowed emails': 'Leidžiami el. paštai',
   'Add': 'Pridėti',
   'No restrictions — anyone can register': 'Nėra apribojimų — bet kas gali registruotis',
+  'Pending Requests': 'Laukiantys prašymai',
+  'Approve': 'Patvirtinti',
+  'Decline': 'Atmesti',
   'Scan to join CalorieTracker': 'Nuskenuokite norėdami prisijungti prie CalorieTracker',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
@@ -1678,7 +1819,7 @@ function toggleQR(){
 function generateQR(){
   var canvas = document.getElementById('qrCanvas');
   if(canvas.dataset.drawn) return;
-  var url = window.location.origin;
+  var url = '{{ invite_url }}';
   // Load QRious library dynamically
   if(typeof QRious === 'undefined'){
     var s = document.createElement('script');
@@ -1928,6 +2069,25 @@ ADMIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
     <button type="submit" class="btn" style="padding:8px 16px;font-size:13px" data-i18n="Add">Add</button>
   </form>
 </div>
+
+{% if pending %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-title" data-i18n="Pending Requests">Pending Requests</div>
+  {% for p in pending %}
+  <div style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;flex-wrap:wrap;">
+    {% if p.picture %}<img src="{{ p.picture }}" style="width:28px;height:28px;border-radius:50%;" referrerpolicy="no-referrer">{% endif %}
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;color:var(--text)">{{ p.email }}</div>
+      <div style="font-size:11px;color:var(--muted)">{% if p.name %}{{ p.name }} · {% endif %}{{ p.requested_at[:16] }}{% if p.invited_by_email %} · invited by {{ p.invited_by_email }}{% endif %}</div>
+    </div>
+    <div style="display:flex;gap:4px;">
+      <form method="POST" action="/api/admin/approve"><input type="hidden" name="id" value="{{ p.id }}"><button type="submit" class="btn" style="padding:4px 12px;font-size:12px;" data-i18n="Approve">Approve</button></form>
+      <form method="POST" action="/api/admin/decline"><input type="hidden" name="id" value="{{ p.id }}"><button type="submit" class="btn-ghost btn-sm" style="padding:4px 8px;font-size:12px;" data-i18n="Decline">Decline</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-title" data-i18n="Allowed emails">Allowed emails</div>
@@ -2191,253 +2351,30 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
           <button type="submit" class="btn-ghost btn-sm btn-danger">✕</button>
         </form>
       </td>
-    </tr>
-    {% endfor %}
-  </table>
-  </div>
-</div>
-{% endif %}
-
-<!-- EDIT MODAL -->
-<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;align-items:center;justify-content:center">
-  <div class="card" style="max-width:500px;width:90%;margin:auto">
-    <div class="card-title" data-i18n="Edit Product">Edit Product</div>
-    <form method="POST" id="editForm" class="form-row" style="flex-direction:column;gap:.75rem">
-      <div class="form-row">
-        <div class="form-group wide"><label data-i18n="Name">Name</label><input name="name" id="eName" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="eKcal" type="number" step="0.1"></div>
-        <div class="form-group"><label data-i18n="Fat">Fat</label><input name="fat" id="eFat" type="number" step="0.1"></div>
-        <div class="form-group"><label data-i18n="Protein">Protein</label><input name="protein" id="eProtein" type="number" step="0.1"></div>
-        <div class="form-group"><label data-i18n="Carbs">Carbs</label><input name="carbs" id="eCarbs" type="number" step="0.1"></div>
-        <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="ePer" type="number" step="0.1"></div>
-      </div>
-      <div class="form-row">
-        <button type="submit" class="btn">Save</button>
-        <button type="button" class="btn btn-ghost" onclick="closeEdit()" data-i18n="Cancel">Cancel</button>
-      </div>
-    </form>
-  </div>
-</div>
-<script>
-function filterProducts(){
-  var q = document.getElementById('productFilter').value.toLowerCase();
-  var rows = document.getElementById('productsTable').querySelectorAll('tr');
-  for(var i = 1; i < rows.length; i++){
-    var name = rows[i].cells[0].textContent.toLowerCase();
-    rows[i].style.display = name.indexOf(q) > -1 ? '' : 'none';
-  }
-}
-function editProduct(id,n,k,f,p,c,pg){
-  document.getElementById('editForm').action='/api/products/'+id;
-  document.getElementById('eName').value=n;
-  document.getElementById('eKcal').value=k;
-  document.getElementById('eFat').value=f;
-  document.getElementById('eProtein').value=p;
-  document.getElementById('eCarbs').value=c;
-  document.getElementById('ePer').value=pg;
-  document.getElementById('editModal').style.display='flex';
-}
-function closeEdit(){document.getElementById('editModal').style.display='none';}
-document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEdit();});
-</script>
-
-<!-- Barcode Scanner -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script>
-var html5QrCode = null;
-var scannerRunning = false;
-var lastScannedCode = '';
-var scanConfirmCount = 0;
-var SCAN_CONFIRM_THRESHOLD = 2;
-
-function jslog(msg, level){
-  level = level || 'INFO';
-  try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
-}
-
-function validateEAN13(code){
-  if(!code || code.length !== 13 || !/^\d{13}$/.test(code)) return code.length === 8;
-  var sum = 0;
-  for(var i = 0; i < 12; i++){
-    sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
-  }
-  var check = (10 - (sum % 10)) % 10;
-  return check === parseInt(code[12]);
-}
-
-function startBarcodeScanner(){
-  var readerDiv = document.getElementById('barcodeReader');
-  var btn = document.getElementById('scanBarcodeBtn');
-
-  if(scannerRunning){
-    stopBarcodeScanner();
-    return;
-  }
-
-  readerDiv.style.display = 'block';
-  btn.textContent = getLang()==='lt' ? '⏹ Sustabdyti' : '⏹ Stop Scanner';
-  lastScannedCode = '';
-  scanConfirmCount = 0;
-  jslog('Starting barcode scanner');
-
-  startHtml5Scanner(readerDiv, btn);
-}
-
-function startHtml5Scanner(readerDiv, btn){
-  html5QrCode = new Html5Qrcode('barcodeReader', {
-    formatsToSupport: [
-      Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.EAN_8,
-      Html5QrcodeSupportedFormats.UPC_A,
-      Html5QrcodeSupportedFormats.UPC_E
-    ]
-  });
-  html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 350, height: 150 }, aspectRatio: 1.5, disableFlip: true, videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, experimentalFeatures: { useBarCodeDetectorIfSupported: false } },
-    function(decodedText){
-      if(!validateEAN13(decodedText)) return;
-      if(decodedText === lastScannedCode){
-        scanConfirmCount++;
-      } else {
-        lastScannedCode = decodedText;
-        scanConfirmCount = 1;
-      }
-      var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
-      showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
-      if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
-        jslog('Barcode confirmed: ' + decodedText);
-        stopBarcodeScanner();
-        document.getElementById('manualBarcode').value = decodedText;
-        lookupBarcode(decodedText);
-      }
-    },
-    function(){}
-  ).catch(function(err){
-    jslog('Camera error: ' + err, 'ERROR');
-    readerDiv.style.display = 'none';
-    btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
-    showStatus(getLang()==='lt' ? 'Nepavyko pasiekti kameros.' : 'Could not access camera.', 'warn');
-  });
-  scannerRunning = true;
-}
-
-function stopBarcodeScanner(){
-  showStatus('', 'hide');
-  var btn = document.getElementById('scanBarcodeBtn');
-  btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
-
-  if(html5QrCode && scannerRunning){
-    html5QrCode.stop().then(function(){
-      document.getElementById('barcodeReader').style.display = 'none';
-      scannerRunning = false;
-      jslog('Scanner stopped');
-    }).catch(function(e){ scannerRunning = false; });
-  } else {
-    document.getElementById('barcodeReader').style.display = 'none';
-    scannerRunning = false;
-  }
-}
-
-function showStatus(msg, type){
-  if(type === 'hide'){ document.getElementById('scanStatus').className = 'scan-status'; return; }
-  var el = document.getElementById('scanStatus');
-  var txt = document.getElementById('scanText');
-  el.classList.add('active');
-  var spinner = el.querySelector('.scan-spinner');
-  if(type === 'loading'){
-    spinner.style.display = '';
-    el.style.background = '';
-    el.style.borderColor = '';
-    txt.style.color = 'var(--muted)';
-  } else if(type === 'success'){
-    spinner.style.display = 'none';
-    el.style.background = 'rgba(74,222,128,.1)';
-    el.style.borderColor = 'rgba(74,222,128,.3)';
-    txt.style.color = '#4ade80';
-  } else {
-    spinner.style.display = 'none';
-    el.style.background = 'rgba(245,158,11,.1)';
-    el.style.borderColor = 'rgba(245,158,11,.3)';
-    txt.style.color = '#f59e0b';
-  }
-  txt.textContent = msg;
-}
-
-function lookupBarcode(code){
-  code = (code || '').trim();
-  if(!code){
-    showStatus('Please enter a barcode number.', 'warn');
-    return;
-  }
-  jslog('Looking up barcode: ' + code);
-  showStatus('Looking up barcode ' + code + '...', 'loading');
-
-  fetch('/api/barcode/' + encodeURIComponent(code))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      jslog('Barcode result: ' + JSON.stringify(data));
-      if(data.found){
-        var name = data.brand ? (data.brand + ' ' + data.name) : data.name;
-        document.getElementById('pName').value = name;
-        document.getElementById('pKcal').value = data.kcal || '';
-        document.getElementById('pFat').value = data.fat || '';
-        document.getElementById('pProtein').value = data.protein || '';
-        document.getElementById('pCarbs').value = data.carbs || '';
-        var bField = document.getElementById('pBarcode');
-        if(bField) bField.value = code;
-        showStatus('Found: ' + name + ' (' + data.kcal + ' kcal, ' + data.fat + 'g fat, ' + data.protein + 'g protein, ' + data.carbs + 'g carbs)', 'success');
-        document.getElementById('pName').focus();
-      } else {
-        showStatus('Product not found in database. Try entering values manually.', 'warn');
-      }
-    })
-    .catch(function(err){
-      jslog('Barcode lookup error: ' + err, 'ERROR');
-      showStatus('Lookup failed: ' + err.message, 'warn');
-    });
-}
-
-function parseNum(s){
-  return parseFloat(s.replace(',', '.')) || 0;
-}
-jslog('Barcode scanner JS loaded');
-</script>
-</div></body></html>"""
-
-
-HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>History — CalorieTracker</title>""" + STYLE + """</head><body>
-""" + NAV.replace("active=='history'", "True") + """
-<div class="container">
-<div class="card">
-  <div class="card-title" data-i18n="Daily History (Last 30 Days)">Daily History (Last 30 Days)</div>
-  {% if days %}
-  <div style="overflow-x:auto">
-  <table class="data-table">
-    <tr><th data-i18n="Date">Date</th><th data-i18n="Items">Items</th><th data-i18n="Kcal">Kcal</th><th data-i18n="Fat">Fat</th><th data-i18n="Protein">Protein</th><th data-i18n="Carbs">Carbs</th><th></th></tr>
-    {% for d in days %}
-    <tr>
-      <td style="font-weight:500;color:var(--text-strong)">{{ d.log_date }}</td>
-      <td>{{ d.items }}</td>
-      <td class="kcal-color">{{ d.kcal|int }}{% if goals %} <span style="color:var(--muted);font-size:11px">/ {{ goals.kcal|int }}</span>{% endif %}</td>
-      <td class="fat-color">{{ d.fat }}g</td>
-      <td class="protein-color">{{ d.protein }}g</td>
-      <td class="carbs-color">{{ d.carbs }}g</td>
-      <td><a href="/?date={{ d.log_date }}" class="btn-ghost btn-sm" style="display:inline-block;text-decoration:none" data-i18n="View">View</a></td>
+ 
     </tr>
     {% endfor %}
   </table>
   </div>
   {% else %}
-  <p style="color:var(--muted);text-align:center;padding:2rem" data-i18n="No entries yet. Start logging food on the dashboard.">No entries yet. Start logging food on the dashboard.</p>
+  <p style="color:var(--muted);font-style:italic" data-i18n="No history yet.">No history yet.</p>
   {% endif %}
 </div>
 </div></body></html>"""
 
-# -- Run --
+PENDING_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CalorieTracker — Pending</title>""" + STYLE + """</head><body>
+<nav class="nav" style="position:relative"><div class="nav-brand"><div class="nav-brand-icon">🔥</div><span class="nav-brand-name">CalorieTracker</span></div></nav>
+<div class="login-wrap">
+  <div style="text-align:center;padding:40px 20px;">
+    <div style="font-size:48px;margin-bottom:16px;">⏳</div>
+    <h2 style="color:var(--text);margin-bottom:12px;">""" + ("Prašymas išsiųstas!" if "{{ lang }}" == "x" else "{{ 'Prašymas išsiųstas!' if lang == 'lt' else 'Request Sent!' }}") + """</h2>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:8px;">{{ email }}</p>
+    <p style="color:var(--muted);font-size:13px;max-width:350px;margin:0 auto;">{{ 'Jūsų prašymas naudoti programą buvo išsiųstas administratoriui. Gausite prieigą kai administratorius patvirtins.' if lang == 'lt' else 'Your request to use the app has been sent to the administrator. You will get access once an admin approves it.' }}</p>
+    <a href="/login" style="display:inline-block;margin-top:20px;color:var(--accent);font-size:13px;text-decoration:none;">{{ '← Grįžti' if lang == 'lt' else '← Back to login' }}</a>
+  </div>
+</div>
+</body></html>"""
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=os.environ.get("DEBUG", "0") == "1")
+    app.run(host="0.0.0.0", port=5555, debug=(not GOOGLE_CLIENT_ID))
