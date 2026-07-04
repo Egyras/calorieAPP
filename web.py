@@ -1204,12 +1204,12 @@ NAV = """
     <a href="/" class="nav-link {{ 'active' if active=='dashboard' }}">📊 <span class="hide-mobile" data-i18n="Dashboard">Dashboard</span></a>
     <a href="/products" class="nav-link {{ 'active' if active=='products' }}">📦 <span class="hide-mobile" data-i18n="Products">Products</span></a>
     <a href="/recipes" class="nav-link {{ 'active' if active=='recipes' }}">🍳 <span class="hide-mobile" data-i18n="Recipes">Recipes</span></a>
-    {% if is_admin %}<a href="/admin" class="nav-link {{ 'active' if active=='admin' }}">⚙ <span class="hide-mobile" data-i18n="Admin">Admin</span></a>{% endif %}
     <a href="/history" class="nav-link {{ 'active' if active=='history' }}">📅 <span class="hide-mobile" data-i18n="History">History</span></a>
     {% if user and user.picture %}<img src="{{ user.picture }}" class="nav-avatar" referrerpolicy="no-referrer">{% endif %}
     <button onclick="toggleLang()" id="langBtn" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;margin-left:4px;">EN</button>
     <script>(function(){try{var l=localStorage.getItem('lang');if(!l){var c=document.cookie.match('(^|;)\\s*lang=([^;]+)');l=c?c[2]:'en';}document.getElementById('langBtn').textContent=l==='en'?'LT':'EN';}catch(e){}})()</script>
-    <a href="/logout" class="nav-link">↗</a>
+    {% if is_admin %}<a href="/admin" class="nav-link {{ 'active' if active=='admin' }}">⚙</a>{% endif %}
+    <a href="/logout" class="nav-link" title="Logout" style="padding:4px 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></a>
   </div>
 </nav>
 """ + I18N
