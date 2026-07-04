@@ -1888,7 +1888,7 @@ addIngredient();
 PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Products — CalorieTracker</title>""" + STYLE + """
 <style>
-.pl-item{padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text);border-bottom:1px solid var(--border);margin:2px 4px;border-radius:6px;}
+.pl-item{padding:14px 14px;cursor:pointer;font-size:14px;color:var(--text);border-bottom:1px solid var(--border);margin:2px 4px;border-radius:6px;min-height:22px;}
 .pl-item:hover,.pl-item.active{background:var(--accent);color:#fff;}
 .pl-item:last-child{border-bottom:none;}
 .scan-area{margin-bottom:1rem;}
