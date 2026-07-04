@@ -993,6 +993,8 @@ var TRANSLATIONS = {
   'Friends': 'Draugai',
   'No members yet': 'Narių dar nėra',
   'Leave': 'Palikti',
+  'Share app': 'Pasidalinti programa',
+  'Scan to join CalorieTracker': 'Nuskenuokite norėdami prisijungti prie CalorieTracker',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
   'Create Recipe': 'Sukurti receptą',
@@ -1541,9 +1543,52 @@ document.addEventListener('click',function(e){
     </div>
     {% endif %}
   {% endfor %}
+  <div style="text-align:center;margin-top:12px;">
+    <button type="button" onclick="toggleQR()" class="btn btn-outline" style="font-size:12px;padding:6px 16px;" data-i18n="Share app">Share app</button>
+    <div id="qrSection" style="display:none;margin-top:12px;padding:16px;background:var(--surface);border-radius:8px;">
+      <canvas id="qrCanvas" style="margin:0 auto;display:block;"></canvas>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;" data-i18n="Scan to join CalorieTracker">Scan to join CalorieTracker</p>
+    </div>
+  </div>
 </div>
 
 <script>
+function toggleQR(){
+  var sec = document.getElementById('qrSection');
+  if(sec.style.display === 'none'){
+    sec.style.display = 'block';
+    generateQR();
+  } else {
+    sec.style.display = 'none';
+  }
+}
+function generateQR(){
+  var canvas = document.getElementById('qrCanvas');
+  if(canvas.dataset.drawn) return;
+  var url = window.location.origin;
+  // Load QRious library dynamically
+  if(typeof QRious === 'undefined'){
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js';
+    s.onload = function(){
+      drawQR(canvas, url);
+    };
+    document.head.appendChild(s);
+  } else {
+    drawQR(canvas, url);
+  }
+}
+function drawQR(canvas, url){
+  new QRious({
+    element: canvas,
+    value: url,
+    size: 200,
+    level: 'M',
+    background: '#ffffff',
+    foreground: '#000000'
+  });
+  canvas.dataset.drawn = '1';
+}
 var bleDevice = null;
 var bleServer = null;
 var scaleConnected = false;
