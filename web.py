@@ -2368,7 +2368,7 @@ PENDING_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 <div class="login-wrap">
   <div style="text-align:center;padding:40px 20px;">
     <div style="font-size:48px;margin-bottom:16px;">⏳</div>
-    <h2 style="color:var(--text);margin-bottom:12px;">""" + ("Prašymas išsiųstas!" if "{{ lang }}" == "x" else "{{ 'Prašymas išsiųstas!' if lang == 'lt' else 'Request Sent!' }}") + """</h2>
+    <h2 style="color:var(--text);margin-bottom:12px;">{{ 'Prašymas išsiųstas!' if lang == 'lt' else 'Request Sent!' }}</h2>
     <p style="color:var(--muted);font-size:14px;margin-bottom:8px;">{{ email }}</p>
     <p style="color:var(--muted);font-size:13px;max-width:350px;margin:0 auto;">{{ 'Jūsų prašymas naudoti programą buvo išsiųstas administratoriui. Gausite prieigą kai administratorius patvirtins.' if lang == 'lt' else 'Your request to use the app has been sent to the administrator. You will get access once an admin approves it.' }}</p>
     <a href="/login" style="display:inline-block;margin-top:20px;color:var(--accent);font-size:13px;text-decoration:none;">{{ '← Grįžti' if lang == 'lt' else '← Back to login' }}</a>
