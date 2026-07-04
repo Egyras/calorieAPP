@@ -15,6 +15,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 ALLOWED_EMAILS       = [e.strip() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
+ADMIN_EMAILS         = ["kompiuteriu@gmail.com", "inga.puplesiene@gmail.com"]
 DB_PATH              = os.environ.get("DB_PATH", "/data/calories.db")
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -98,6 +99,11 @@ def get_db():
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+            CREATE TABLE IF NOT EXISTS allowed_emails (
+                email TEXT PRIMARY KEY,
+                added_by INTEGER,
+                added_at TEXT DEFAULT (datetime('now'))
+            );
             CREATE TABLE IF NOT EXISTS recipe_items (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 recipe_id  INTEGER NOT NULL,
@@ -107,6 +113,12 @@ def get_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         """)
+        # Migrate: add allowed_emails table + seed from env
+        db.execute("""CREATE TABLE IF NOT EXISTS allowed_emails (
+            email TEXT PRIMARY KEY, added_by INTEGER, added_at TEXT DEFAULT (datetime('now')))""")
+        if db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0] == 0:
+            for em in ALLOWED_EMAILS:
+                db.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (em,))
         # Migrate: add barcode column if missing
         try:
             db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")
@@ -218,6 +230,14 @@ def login_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+@app.context_processor
+def inject_admin():
+    if "user_id" in session:
+        u = current_user()
+        if u:
+            return {"is_admin": u["email"] in ADMIN_EMAILS}
+    return {"is_admin": False}
+
 def current_user():
     if "user_id" not in session:
         return None
@@ -265,10 +285,11 @@ def google_auth():
         token = request.form.get("credential") or request.json.get("credential", "")
         idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
         email = idinfo["email"]
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        db = get_db()
+        allowed = db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0]
+        if allowed > 0 and not db.execute("SELECT 1 FROM allowed_emails WHERE email=?", (email,)).fetchone():
             flash("Access denied. Your email is not authorized.")
             return redirect(url_for("login"))
-        db = get_db()
         user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         if user:
             session["user_id"] = user["id"]
@@ -298,10 +319,11 @@ def google_auth():
 def dev_auth():
     """Simple email login (works in any browser)."""
     email = request.form.get("email", "dev@localhost")
-    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+    db = get_db()
+    allowed = db.execute("SELECT COUNT(*) FROM allowed_emails").fetchone()[0]
+    if allowed > 0 and not db.execute("SELECT 1 FROM allowed_emails WHERE email=?", (email,)).fetchone():
         flash("Access denied. Your email is not authorized.")
         return redirect(url_for("login"))
-    db = get_db()
     user = db.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if user:
         session["user_id"] = user["id"]
@@ -316,6 +338,50 @@ def dev_auth():
     db.commit()
     return redirect(url_for("index"))
 
+
+@app.route("/admin")
+@login_required
+def admin_page():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    # Only admins (kompiuteriu@gmail.com and inga.puplesiene@gmail.com or users in ALLOWED_EMAILS env)
+    if user["email"] not in ADMIN_EMAILS:
+        return redirect(url_for("index"))
+    emails = db.execute("SELECT email, added_at FROM allowed_emails ORDER BY email").fetchall()
+    lang = request.cookies.get("lang", "en")
+    return render_template_string(ADMIN_PAGE, user=user, emails=emails, active="admin")
+
+@app.route("/api/admin/add-email", methods=["POST"])
+@login_required
+def admin_add_email():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] not in ADMIN_EMAILS:
+        return redirect(url_for("index"))
+    email = request.form.get("email", "").strip().lower()
+    if email:
+        db.execute("INSERT OR IGNORE INTO allowed_emails (email, added_by) VALUES (?,?)", (email, uid))
+        db.commit()
+        lang = request.cookies.get("lang", "en")
+        flash("Pridėta ✓" if lang == "lt" else "Added ✓")
+    return redirect(url_for("admin_page"))
+
+@app.route("/api/admin/remove-email", methods=["POST"])
+@login_required
+def admin_remove_email():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] not in ADMIN_EMAILS:
+        return redirect(url_for("index"))
+    email = request.form.get("email", "").strip().lower()
+    # Don't allow removing yourself
+    if email and email != user["email"]:
+        db.execute("DELETE FROM allowed_emails WHERE email=?", (email,))
+        db.commit()
+    return redirect(url_for("admin_page"))
 
 @app.route("/favicon.ico")
 def favicon():
@@ -994,6 +1060,12 @@ var TRANSLATIONS = {
   'No members yet': 'Narių dar nėra',
   'Leave': 'Palikti',
   'Share app': 'Pasidalinti programa',
+  'Admin': 'Administravimas',
+  'Manage Access': 'Prieigos valdymas',
+  'Add allowed email': 'Pridėti leidžiamą el. paštą',
+  'Allowed emails': 'Leidžiami el. paštai',
+  'Add': 'Pridėti',
+  'No restrictions — anyone can register': 'Nėra apribojimų — bet kas gali registruotis',
   'Scan to join CalorieTracker': 'Nuskenuokite norėdami prisijungti prie CalorieTracker',
   '+ Create': '+ Sukurti',
   'Recipes': 'Receptai',
@@ -1132,6 +1204,7 @@ NAV = """
     <a href="/" class="nav-link {{ 'active' if active=='dashboard' }}">📊 <span class="hide-mobile" data-i18n="Dashboard">Dashboard</span></a>
     <a href="/products" class="nav-link {{ 'active' if active=='products' }}">📦 <span class="hide-mobile" data-i18n="Products">Products</span></a>
     <a href="/recipes" class="nav-link {{ 'active' if active=='recipes' }}">🍳 <span class="hide-mobile" data-i18n="Recipes">Recipes</span></a>
+    {% if is_admin %}<a href="/admin" class="nav-link {{ 'active' if active=='admin' }}">⚙ <span class="hide-mobile" data-i18n="Admin">Admin</span></a>{% endif %}
     <a href="/history" class="nav-link {{ 'active' if active=='history' }}">📅 <span class="hide-mobile" data-i18n="History">History</span></a>
     {% if user and user.picture %}<img src="{{ user.picture }}" class="nav-avatar" referrerpolicy="no-referrer">{% endif %}
     <button onclick="toggleLang()" id="langBtn" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;margin-left:4px;">EN</button>
@@ -1793,6 +1866,47 @@ function onScaleDisconnected(){
   scaleLog('Scale disconnected');
 }
 </script>
+</div></body></html>"""
+
+ADMIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin — CalorieTracker</title>""" + STYLE + """</head><body>
+<div class="container">""" + NAV.replace("active=='admin'", "True") + """
+<h2 style="margin-bottom:12px;" data-i18n="Manage Access">Manage Access</h2>
+
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+{% for msg in messages %}
+<div style="padding:10px 14px;margin-bottom:12px;border-radius:8px;font-size:13px;background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);">{{ msg }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-title" data-i18n="Add allowed email">Add allowed email</div>
+  <form method="POST" action="/api/admin/add-email" style="display:flex;gap:8px;">
+    <input name="email" type="email" placeholder="email@example.com" required style="flex:1;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:inherit;">
+    <button type="submit" class="btn" style="padding:8px 16px;font-size:13px" data-i18n="Add">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title" data-i18n="Allowed emails">Allowed emails</div>
+  {% for e in emails %}
+  <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:4px;">
+    <span style="flex:1;font-size:13px;color:var(--text)">{{ e.email }}</span>
+    <span style="font-size:11px;color:var(--muted)">{{ e.added_at[:10] if e.added_at else '' }}</span>
+    {% if e.email != user.email %}
+    <form method="POST" action="/api/admin/remove-email" style="display:inline" onsubmit="return confirm('Remove {{ e.email }}?')">
+      <input type="hidden" name="email" value="{{ e.email }}">
+      <button type="submit" class="btn-ghost btn-sm" style="font-size:10px;padding:2px 6px">✕</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if not emails %}
+  <p style="color:var(--muted);font-size:13px;font-style:italic" data-i18n="No restrictions — anyone can register">No restrictions — anyone can register</p>
+  {% endif %}
+</div>
 </div></body></html>"""
 
 RECIPES_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
