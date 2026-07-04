@@ -433,16 +433,26 @@ def add_product():
     uid = session["user_id"]
     db = get_db()
     barcode = request.form.get("barcode", "").strip() or None
+    name = request.form["name"].strip()
+    kcal = float(request.form.get("kcal", 0))
+    fat = float(request.form.get("fat", 0))
+    protein = float(request.form.get("protein", 0))
+    carbs = float(request.form.get("carbs", 0))
+    per = float(request.form.get("per_grams", 100))
+    # Check for duplicate across group
+    group_ids = get_group_user_ids(db, uid)
+    existing = db.execute(
+        "SELECT id FROM products WHERE name=? AND kcal=? AND fat=? AND protein=? AND carbs=? AND per_grams=? AND user_id IN ({})".format(
+            ",".join("?" * len(group_ids))),
+        (name, kcal, fat, protein, carbs, per, *group_ids)).fetchone()
+    if existing:
+        flash("Product already exists / Produktas jau egzistuoja")
+        return redirect(request.referrer or url_for("products_page"))
     db.execute("INSERT INTO products (user_id, name, kcal, fat, protein, carbs, per_grams, barcode) VALUES (?,?,?,?,?,?,?,?)",
-               (uid, request.form["name"],
-                float(request.form.get("kcal", 0)),
-                float(request.form.get("fat", 0)),
-                float(request.form.get("protein", 0)),
-                float(request.form.get("carbs", 0)),
-                float(request.form.get("per_grams", 100)),
-                barcode))
+               (uid, name, kcal, fat, protein, carbs, per, barcode))
     db.commit()
-    return redirect(request.referrer or url_for("index"))
+    flash("Product added / Produktas pridėtas ✓")
+    return redirect(request.referrer or url_for("products_page"))
 
 @app.route("/api/products/<int:pid>", methods=["POST"])
 @login_required
@@ -1917,7 +1927,18 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 """ + NAV.replace("active=='products'", "True") + """
 <div class="container">
 <div class="card">
-  <div class="card-title" data-i18n="Add New Product">Add New Product</div>
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  {% for msg in messages %}
+  <div style="padding:10px 14px;margin-bottom:12px;border-radius:8px;font-size:13px;
+    {% if '✓' in msg %}background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);
+    {% else %}background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% endwith %}
+<div class="card-title" data-i18n="Add New Product">Add New Product</div>
   <p style="color:var(--muted);font-size:12px;margin-bottom:.75rem" data-i18n="Enter values from the nutrition label, or scan it with your camera.">Enter values from the nutrition label, or scan it with your camera.</p>
 
   <!-- BARCODE SCANNER -->
