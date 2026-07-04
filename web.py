@@ -446,12 +446,14 @@ def add_product():
             ",".join("?" * len(group_ids))),
         (name, kcal, fat, protein, carbs, per, *group_ids)).fetchone()
     if existing:
-        flash("Product already exists / Produktas jau egzistuoja")
+        lang = request.cookies.get("lang", "en")
+        flash("Produktas jau egzistuoja" if lang == "lt" else "Product already exists")
         return redirect(request.referrer or url_for("products_page"))
     db.execute("INSERT INTO products (user_id, name, kcal, fat, protein, carbs, per_grams, barcode) VALUES (?,?,?,?,?,?,?,?)",
                (uid, name, kcal, fat, protein, carbs, per, barcode))
     db.commit()
-    flash("Product added / Produktas pridėtas ✓")
+    lang = request.cookies.get("lang", "en")
+    flash(("Produktas pridėtas ✓" if lang == "lt" else "Product added ✓"))
     return redirect(request.referrer or url_for("products_page"))
 
 @app.route("/api/products/<int:pid>", methods=["POST"])
