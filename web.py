@@ -326,7 +326,7 @@ def google_auth():
                     # Check not already pending
                     existing = db.execute("SELECT id, status FROM pending_approvals WHERE email=?", (email,)).fetchone()
                     if existing:
-                        if existing["status"] == "declined":
+                        if existing["status"] in ("declined", "approved"):
                             db.execute("UPDATE pending_approvals SET status='pending', name=?, picture=?, invite_token=?, requested_at=datetime('now') WHERE id=?",
                                        (idinfo.get("name"), idinfo.get("picture"), inv_token, existing["id"]))
                             db.commit()
@@ -378,7 +378,7 @@ def dev_auth():
             if valid:
                 existing = db.execute("SELECT id, status FROM pending_approvals WHERE email=?", (email,)).fetchone()
                 if existing:
-                    if existing["status"] == "declined":
+                    if existing["status"] in ("declined", "approved"):
                         db.execute("UPDATE pending_approvals SET status='pending', invite_token=?, requested_at=datetime('now') WHERE id=?",
                                    (inv_token, existing["id"]))
                         db.commit()
