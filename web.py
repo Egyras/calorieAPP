@@ -2370,6 +2370,145 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 function filterProducts(){var f=document.getElementById('productFilter').value.toLowerCase();var rows=document.querySelectorAll('#productsTable tr');for(var i=1;i<rows.length;i++){rows[i].style.display=rows[i].textContent.toLowerCase().includes(f)?'':'none';}}
 function editProduct(id,name,kcal,fat,protein,carbs,per){document.getElementById('pName').value=name;document.getElementById('pKcal').value=kcal;document.getElementById('pFat').value=fat;document.getElementById('pProtein').value=protein;document.getElementById('pCarbs').value=carbs;document.getElementById('pPer').value=per;var form=document.getElementById('addProductForm');form.action='/api/products/'+id+'/edit';form.scrollIntoView({behavior:'smooth'});}
 </script>
+
+<!-- Barcode Scanner -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+var html5QrCode = null;
+var scannerRunning = false;
+var lastScannedCode = '';
+var scanConfirmCount = 0;
+var SCAN_CONFIRM_THRESHOLD = 2;
+
+function jslog(msg, level){
+  level = level || 'INFO';
+  try { fetch('/api/jslog', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({msg:msg, level:level})}); } catch(e){}
+}
+
+function validateEAN13(code){
+  if(!code || code.length !== 13 || !/^\d{13}$/.test(code)) return code.length === 8;
+  var sum = 0;
+  for(var i = 0; i < 12; i++){
+    sum += parseInt(code[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  var check = (10 - (sum % 10)) % 10;
+  return check === parseInt(code[12]);
+}
+
+function startBarcodeScanner(){
+  var readerDiv = document.getElementById('barcodeReader');
+  var btn = document.getElementById('scanBarcodeBtn');
+  if(scannerRunning){ stopBarcodeScanner(); return; }
+  readerDiv.style.display = 'block';
+  btn.textContent = getLang()==='lt' ? '⏹ Sustabdyti' : '⏹ Stop Scanner';
+  lastScannedCode = '';
+  scanConfirmCount = 0;
+  jslog('Starting barcode scanner');
+  startHtml5Scanner(readerDiv, btn);
+}
+
+function startHtml5Scanner(readerDiv, btn){
+  html5QrCode = new Html5Qrcode('barcodeReader', {
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E
+    ]
+  });
+  html5QrCode.start(
+    { facingMode: 'environment' },
+    { fps: 20, qrbox: { width: 350, height: 150 }, aspectRatio: 1.5, disableFlip: true, videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, experimentalFeatures: { useBarCodeDetectorIfSupported: false } },
+    function(decodedText){
+      if(!validateEAN13(decodedText)) return;
+      if(decodedText === lastScannedCode){ scanConfirmCount++; } else { lastScannedCode = decodedText; scanConfirmCount = 1; }
+      var pct = Math.round(scanConfirmCount / SCAN_CONFIRM_THRESHOLD * 100);
+      showStatus((getLang()==='lt' ? 'Skenuojama... ' : 'Scanning... ') + pct + '%', 'ok');
+      if(scanConfirmCount >= SCAN_CONFIRM_THRESHOLD){
+        jslog('Barcode confirmed: ' + decodedText);
+        stopBarcodeScanner();
+        document.getElementById('manualBarcode').value = decodedText;
+        lookupBarcode(decodedText);
+      }
+    },
+    function(){}
+  ).catch(function(err){
+    jslog('Camera error: ' + err, 'ERROR');
+    readerDiv.style.display = 'none';
+    btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
+    showStatus(getLang()==='lt' ? 'Nepavyko pasiekti kameros.' : 'Could not access camera.', 'warn');
+  });
+  scannerRunning = true;
+}
+
+function stopBarcodeScanner(){
+  showStatus('', 'hide');
+  var btn = document.getElementById('scanBarcodeBtn');
+  btn.textContent = getLang()==='lt' ? '📊 Skenuoti kodą' : '📊 Scan Barcode';
+  if(html5QrCode && scannerRunning){
+    html5QrCode.stop().then(function(){
+      document.getElementById('barcodeReader').style.display = 'none';
+      scannerRunning = false;
+    }).catch(function(e){ scannerRunning = false; });
+  } else {
+    document.getElementById('barcodeReader').style.display = 'none';
+    scannerRunning = false;
+  }
+}
+
+function showStatus(msg, type){
+  if(type === 'hide'){ document.getElementById('scanStatus').className = 'scan-status'; return; }
+  var el = document.getElementById('scanStatus');
+  var txt = document.getElementById('scanText');
+  el.classList.add('active');
+  var spinner = el.querySelector('.scan-spinner');
+  if(type === 'loading'){
+    spinner.style.display = '';
+    el.style.background = '';
+    el.style.borderColor = '';
+    txt.style.color = 'var(--muted)';
+  } else if(type === 'success'){
+    spinner.style.display = 'none';
+    el.style.background = 'rgba(74,222,128,.1)';
+    el.style.borderColor = 'rgba(74,222,128,.3)';
+    txt.style.color = '#4ade80';
+  } else {
+    spinner.style.display = 'none';
+    el.style.background = 'rgba(245,158,11,.1)';
+    el.style.borderColor = 'rgba(245,158,11,.3)';
+    txt.style.color = '#f59e0b';
+  }
+  txt.textContent = msg;
+}
+
+function lookupBarcode(code){
+  code = (code || '').trim();
+  if(!code){ showStatus('Please enter a barcode number.', 'warn'); return; }
+  jslog('Looking up barcode: ' + code);
+  showStatus('Looking up barcode ' + code + '...', 'loading');
+  fetch('/api/barcode/' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data.found){
+        var name = data.brand ? (data.brand + ' ' + data.name) : data.name;
+        document.getElementById('pName').value = name;
+        document.getElementById('pKcal').value = data.kcal || '';
+        document.getElementById('pFat').value = data.fat || '';
+        document.getElementById('pProtein').value = data.protein || '';
+        document.getElementById('pCarbs').value = data.carbs || '';
+        var bField = document.getElementById('pBarcode');
+        if(bField) bField.value = code;
+        showStatus('Found: ' + name + ' (' + data.kcal + ' kcal)', 'success');
+        document.getElementById('pName').focus();
+      } else {
+        showStatus('Product not found in database. Try entering values manually.', 'warn');
+      }
+    })
+    .catch(function(err){
+      showStatus('Lookup failed: ' + err.message, 'warn');
+    });
+}
+</script>
 </body></html>"""
 
 HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2411,7 +2550,7 @@ INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vi
 <div class="login-wrap">
   <div style="text-align:center;padding:20px 20px 0;">
     <div style="font-size:48px;margin-bottom:12px;">&#x1F44B;</div>
-    <h2 style="color:var(--text);margin-bottom:12px;" id="invTitle">You've been invited!</h2>
+    <h2 style="color:var(--text);margin-bottom:12px;" id="invTitle">You&#39;ve been invited!</h2>
     <p style="color:var(--muted);font-size:14px;max-width:400px;margin:0 auto 8px;" id="invDesc">You have been invited to use CalorieTracker - a nutrition tracking app for logging calories, protein, fat and carbs.</p>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin:16px auto;max-width:400px;text-align:left;">
       <p style="color:var(--accent);font-size:13px;font-weight:600;margin-bottom:6px;" id="invHow">How it works:</p>
@@ -2460,7 +2599,7 @@ function applyInviteLang(){
     document.getElementById('invEmail').textContent='Arba prisijunkite el. paštu:';
     document.getElementById('invSignIn').textContent='Prisijungti';
   } else {
-    document.getElementById('invTitle').textContent="You've been invited!";
+    document.getElementById('invTitle').textContent="You&#39;ve been invited!";
     document.getElementById('invDesc').textContent='You have been invited to use CalorieTracker - a nutrition tracking app for logging calories, protein, fat and carbs.';
     document.getElementById('invHow').textContent='How it works:';
     document.getElementById('invSteps').innerHTML='1. Sign in with your Google account or email below.<br>2. Your request will be sent to the administrator.<br>3. Once approved, you can log in and start tracking.';
