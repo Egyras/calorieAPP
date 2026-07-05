@@ -637,13 +637,23 @@ def barcode_lookup(code):
 def add_product():
     uid = session["user_id"]
     db = get_db()
+    lang = request.cookies.get("lang", "en")
     barcode = request.form.get("barcode", "").strip() or None
-    name = request.form["name"].strip()
-    kcal = float(request.form.get("kcal", 0))
-    fat = float(request.form.get("fat", 0))
-    protein = float(request.form.get("protein", 0))
-    carbs = float(request.form.get("carbs", 0))
-    per = float(request.form.get("per_grams", 100))
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Įveskite produkto pavadinimą" if lang == "lt" else "Enter product name")
+        return redirect(request.referrer or url_for("products_page"))
+    try:
+        kcal = float(request.form.get("kcal") or 0)
+        fat = float(request.form.get("fat") or 0)
+        protein = float(request.form.get("protein") or 0)
+        carbs = float(request.form.get("carbs") or 0)
+        per = float(request.form.get("per_grams") or 100)
+    except (ValueError, TypeError):
+        flash("Neteisingi skaičiai" if lang == "lt" else "Invalid number values")
+        return redirect(request.referrer or url_for("products_page"))
+    if per <= 0:
+        per = 100
     # Check for duplicate across group
     group_ids = get_group_user_ids(db, uid)
     existing = db.execute(
@@ -2324,11 +2334,11 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
     <input type="hidden" name="barcode" id="pBarcode">
     <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast" data-i18n-ph="e.g. Chicken Breast"></div>
-    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" required placeholder="165"></div>
-    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" placeholder="3.6"></div>
-    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" placeholder="31"></div>
-    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" placeholder="0"></div>
-    <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" value="100" placeholder="100"></div>
+    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" min="0" required placeholder="165"></div>
+    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" min="0" placeholder="3.6"></div>
+    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" min="0" placeholder="31"></div>
+    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" min="0" placeholder="0"></div>
+    <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" min="1" value="100" required placeholder="100"></div>
     <button type="submit" class="btn" data-i18n="+ Add">+ Add</button>
   </form>
 </div>
