@@ -671,22 +671,40 @@ def add_product():
     flash(("Produktas pridėtas ✓" if lang == "lt" else "Product added ✓"))
     return redirect(request.referrer or url_for("products_page"))
 
-@app.route("/api/products/<int:pid>", methods=["POST"])
+@app.route("/api/products/<int:pid>/edit", methods=["POST"])
 @login_required
 def update_product(pid):
     uid = session["user_id"]
     db = get_db()
+    lang = request.cookies.get("lang", "en")
+    # Allow editing own products or group-shared products
+    group_ids = get_group_user_ids(db, uid)
+    product = db.execute("SELECT * FROM products WHERE id=? AND user_id IN ({})".format(
+        ",".join("?" * len(group_ids))), (pid, *group_ids)).fetchone()
+    if not product:
+        flash("Produktas nerastas" if lang == "lt" else "Product not found")
+        return redirect(request.referrer or url_for("products_page"))
+    try:
+        name = request.form.get("name", "").strip()
+        kcal = float(request.form.get("kcal") or 0)
+        fat = float(request.form.get("fat") or 0)
+        protein = float(request.form.get("protein") or 0)
+        carbs = float(request.form.get("carbs") or 0)
+        per = float(request.form.get("per_grams") or 100)
+    except (ValueError, TypeError):
+        flash("Neteisingi skaičiai" if lang == "lt" else "Invalid number values")
+        return redirect(request.referrer or url_for("products_page"))
+    if not name:
+        flash("Įveskite pavadinimą" if lang == "lt" else "Enter product name")
+        return redirect(request.referrer or url_for("products_page"))
+    if per <= 0:
+        per = 100
     db.execute("""UPDATE products SET name=?, kcal=?, fat=?, protein=?, carbs=?, per_grams=?
-                  WHERE id=? AND user_id=?""",
-               (request.form["name"],
-                float(request.form.get("kcal", 0)),
-                float(request.form.get("fat", 0)),
-                float(request.form.get("protein", 0)),
-                float(request.form.get("carbs", 0)),
-                float(request.form.get("per_grams", 100)),
-                pid, uid))
+                  WHERE id=?""",
+               (name, kcal, fat, protein, carbs, per, pid))
     db.commit()
-    return redirect(request.referrer or url_for("index"))
+    flash("Produktas atnaujintas ✓" if lang == "lt" else "Product updated ✓")
+    return redirect(request.referrer or url_for("products_page"))
 
 @app.route("/api/products/<int:pid>/delete", methods=["POST"])
 @login_required
@@ -2378,7 +2396,36 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
 
 <script>
 function filterProducts(){var f=document.getElementById('productFilter').value.toLowerCase();var rows=document.querySelectorAll('#productsTable tr');for(var i=1;i<rows.length;i++){rows[i].style.display=rows[i].textContent.toLowerCase().includes(f)?'':'none';}}
-function editProduct(id,name,kcal,fat,protein,carbs,per){document.getElementById('pName').value=name;document.getElementById('pKcal').value=kcal;document.getElementById('pFat').value=fat;document.getElementById('pProtein').value=protein;document.getElementById('pCarbs').value=carbs;document.getElementById('pPer').value=per;var form=document.getElementById('addProductForm');form.action='/api/products/'+id+'/edit';form.scrollIntoView({behavior:'smooth'});}
+function editProduct(id,name,kcal,fat,protein,carbs,per){
+  document.getElementById('pName').value=name;
+  document.getElementById('pKcal').value=kcal;
+  document.getElementById('pFat').value=fat;
+  document.getElementById('pProtein').value=protein;
+  document.getElementById('pCarbs').value=carbs;
+  document.getElementById('pPer').value=per;
+  var form=document.getElementById('addProductForm');
+  form.action='/api/products/'+id+'/edit';
+  var btn=form.querySelector('button[type=submit]');
+  btn.textContent=getLang()==='lt'?'Atnaujinti':'Update';
+  btn.style.background='#f59e0b';
+  var cancel=document.getElementById('cancelEdit');
+  if(!cancel){cancel=document.createElement('button');cancel.id='cancelEdit';cancel.type='button';cancel.className='btn';cancel.style.cssText='background:var(--surface2);color:var(--text);margin-left:4px;';btn.parentNode.insertBefore(cancel,btn.nextSibling);}
+  cancel.textContent=getLang()==='lt'?'Atšaukti':'Cancel';
+  cancel.style.display='';
+  cancel.onclick=function(){resetProductForm();};
+  form.scrollIntoView({behavior:'smooth'});
+}
+function resetProductForm(){
+  var form=document.getElementById('addProductForm');
+  form.action='/api/products';
+  form.reset();
+  document.getElementById('pPer').value='100';
+  var btn=form.querySelector('button[type=submit]');
+  btn.textContent=getLang()==='lt'?'+ Pridėti':'+ Add';
+  btn.style.background='';
+  var cancel=document.getElementById('cancelEdit');
+  if(cancel) cancel.style.display='none';
+}
 </script>
 
 <!-- Barcode Scanner -->
