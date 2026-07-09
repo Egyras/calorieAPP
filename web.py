@@ -1402,6 +1402,17 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
          data-auto_prompt="false"></div>
     <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="pill" data-width="300"></div>
   </div>
+  <script>
+  function handleCredentialResponse(response) {
+    try{var p=JSON.parse(atob(response.credential.split('.')[1]));if(p.email)localStorage.setItem('savedEmail',p.email);}catch(e){}
+    fetch("/auth/google", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({credential: response.credential}),
+      credentials: "same-origin"
+    }).then(function(r){ window.location.href = "/"; });
+  }
+  </script>
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
     <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" data-i18n="Google login not working? Sign in with email:">Google login not working? Sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
@@ -1428,7 +1439,11 @@ function applyLoginLang(){
     el.placeholder=l==='lt'?(t[k]||k):k;
   });
 }
-document.addEventListener('DOMContentLoaded',applyLoginLang);
+document.addEventListener('DOMContentLoaded',function(){
+  applyLoginLang();
+  try{var saved=localStorage.getItem('savedEmail');if(saved){var inp=document.getElementById('loginEmail');if(inp)inp.value=saved;}}catch(e){}
+});
+(function(){var f=document.querySelector('form[action="/auth/dev"]');if(f)f.addEventListener('submit',function(){var e=f.querySelector('input[name="email"]');if(e&&e.value)try{localStorage.setItem('savedEmail',e.value);}catch(x){}});})();
 </script>
 </body></html>"""
 
