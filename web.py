@@ -1402,20 +1402,10 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
          data-auto_prompt="false"></div>
     <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="pill" data-width="300"></div>
   </div>
-  <script>
-  function handleCredentialResponse(response) {
-    fetch("/auth/google", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({credential: response.credential}),
-      credentials: "same-origin"
-    }).then(function(r){ window.location.href = "/"; });
-  }
-  </script>
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
     <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" data-i18n="Google login not working? Sign in with email:">Google login not working? Sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
-      <input name="email" type="email" placeholder="your@email.com" data-i18n-ph="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <input name="email" id="loginEmail" type="email" placeholder="your@email.com" data-i18n-ph="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
       <button type="submit" class="btn" style="white-space:nowrap;" data-i18n="Sign In">Sign In</button>
     </form>
   </div>
@@ -1452,7 +1442,7 @@ LOGIN_NO_OAUTH = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name=
     <form method="POST" action="/auth/dev">
       <div class="form-group" style="margin-bottom:1rem">
         <label data-i18n="Email">Email</label>
-        <input name="email" value="dev@localhost" required>
+        <input name="email" id="loginEmail" value="dev@localhost" autocomplete="email" required>
       </div>
       <button type="submit" class="btn" style="width:100%" data-i18n="Sign In (Dev Mode)">Sign In (Dev Mode)</button>
     </form>
@@ -1476,7 +1466,11 @@ function applyLoginLang(){
     el.placeholder=l==='lt'?(t[k]||k):k;
   });
 }
-document.addEventListener('DOMContentLoaded',applyLoginLang);
+document.addEventListener('DOMContentLoaded',function(){
+  applyLoginLang();
+  try{var saved=localStorage.getItem('savedEmail');if(saved){var inp=document.getElementById('loginEmail');if(inp&&inp.value==='dev@localhost')inp.value=saved;}}catch(e){}
+});
+(function(){var f=document.querySelector('form[action="/auth/dev"]');if(f)f.addEventListener('submit',function(){var e=f.querySelector('input[name="email"]');if(e&&e.value)try{localStorage.setItem('savedEmail',e.value);}catch(x){}});})();
 </script>
 </body></html>"""
 
@@ -2624,6 +2618,7 @@ INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vi
   </div>
   <script>
   function handleCredentialResponse(response) {
+    try{var p=JSON.parse(atob(response.credential.split('.')[1]));if(p.email)localStorage.setItem('savedEmail',p.email);}catch(e){}
     fetch("/auth/google", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -2635,7 +2630,7 @@ INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vi
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
     <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" id="invEmail">Or sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
-      <input name="email" type="email" placeholder="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <input name="email" id="invEmailInput" type="email" placeholder="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
       <button type="submit" class="btn" style="white-space:nowrap;" id="invSignIn">Sign In</button>
     </form>
   </div>
@@ -2665,7 +2660,11 @@ function applyInviteLang(){
     document.getElementById('invSignIn').textContent='Sign In';
   }
 }
-document.addEventListener('DOMContentLoaded',applyInviteLang);
+document.addEventListener('DOMContentLoaded',function(){
+  applyInviteLang();
+  try{var saved=localStorage.getItem('savedEmail');if(saved){var inp=document.getElementById('invEmailInput');if(inp)inp.value=saved;}}catch(e){}
+});
+(function(){var f=document.querySelector('form[action="/auth/dev"]');if(f)f.addEventListener('submit',function(){var e=f.querySelector('input[name="email"]');if(e&&e.value)try{localStorage.setItem('savedEmail',e.value);}catch(x){}});})();
 </script>
 </body></html>"""
 
