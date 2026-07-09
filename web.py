@@ -1415,7 +1415,7 @@ LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vie
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
     <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" data-i18n="Google login not working? Sign in with email:">Google login not working? Sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
-      <input name="email" type="email" placeholder="your@email.com" data-i18n-ph="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <input name="email" type="email" placeholder="your@email.com" data-i18n-ph="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
       <button type="submit" class="btn" style="white-space:nowrap;" data-i18n="Sign In">Sign In</button>
     </form>
   </div>
@@ -2635,7 +2635,7 @@ INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="vi
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
     <p style="color:var(--muted);font-size:12px;margin-bottom:0.75rem;" id="invEmail">Or sign in with email:</p>
     <form method="POST" action="/auth/dev" style="display:flex;gap:8px;max-width:300px;margin:0 auto;">
-      <input name="email" type="email" placeholder="your@email.com" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
+      <input name="email" type="email" placeholder="your@email.com" autocomplete="email" required style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
       <button type="submit" class="btn" style="white-space:nowrap;" id="invSignIn">Sign In</button>
     </form>
   </div>
