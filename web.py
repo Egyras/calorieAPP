@@ -1569,7 +1569,7 @@ MAIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="view
     <div class="form-group">
       <label data-i18n="Grams">Grams</label>
       <div style="display:flex;gap:4px;align-items:stretch;">
-        <input name="grams" type="number" step="0.1" min="0" id="gramsInput" required placeholder="100" style="flex:1;min-width:0;">
+        <input name="grams" type="number" step="any" min="0" id="gramsInput" required placeholder="100" style="flex:1;min-width:0;">
         <button type="button" id="scaleBtn" onclick="toggleScale()" style="width:38px;flex-shrink:0;padding:0;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Connect BLE scale" data-i18n-title="Connect BLE scale">&#9878;</button>
       </div>
       <div id="scaleStatus" style="display:none;margin-top:4px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;"></div>
@@ -2249,7 +2249,7 @@ function addIngredient(){
     + 'onclick="showIngList('+n+')" oninput="filterIngList('+n+')" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box;">'
     + '<div id="ingList'+n+'" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;max-height:200px;overflow-y:auto;z-index:10;"></div>'
     + '</div>'
-    + '<input type="number" name="grams[]" placeholder="g" min="1" step="0.1" required>'
+    + '<input type="number" name="grams[]" placeholder="g" min="1" step="any" required>'
     + '<button type="button" onclick="this.parentNode.remove()">\u2715</button>';
   var list = div.querySelector('#ingList'+n);
   products.forEach(function(p){
@@ -2361,11 +2361,11 @@ PRODUCTS_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="
   <form method="POST" action="/api/products" class="form-row" id="addProductForm">
     <input type="hidden" name="barcode" id="pBarcode">
     <div class="form-group wide"><label data-i18n="Product Name">Product Name</label><input name="name" id="pName" required placeholder="e.g. Chicken Breast" data-i18n-ph="e.g. Chicken Breast"></div>
-    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="0.1" min="0" required placeholder="165"></div>
-    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="0.1" min="0" placeholder="3.6"></div>
-    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="0.1" min="0" placeholder="31"></div>
-    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="0.1" min="0" placeholder="0"></div>
-    <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="pPer" type="number" step="0.1" min="1" value="100" required placeholder="100"></div>
+    <div class="form-group"><label data-i18n="Kcal">Kcal</label><input name="kcal" id="pKcal" type="number" step="any" min="0" required placeholder="165"></div>
+    <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" id="pFat" type="number" step="any" min="0" placeholder="3.6"></div>
+    <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" id="pProtein" type="number" step="any" min="0" placeholder="31"></div>
+    <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" id="pCarbs" type="number" step="any" min="0" placeholder="0"></div>
+    <div class="form-group"><label data-i18n="Per (g)">Per (g)</label><input name="per_grams" id="pPer" type="number" step="any" min="1" value="100" required placeholder="100"></div>
     <button type="submit" class="btn" data-i18n="+ Add">+ Add</button>
   </form>
 </div>
