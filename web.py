@@ -16,6 +16,7 @@ GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 ALLOWED_EMAILS       = [e.strip() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()]
 ADMIN_EMAILS         = ["kompiuteriu@gmail.com", "inga.puplesiene@gmail.com"]
+CYCLE_EMAIL          = "inga.puplesiene@gmail.com"
 DB_PATH              = os.environ.get("DB_PATH", "/data/calories.db")
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -180,6 +181,20 @@ def get_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, log_date))""")
+        db.commit()
+        # Migrate: add cycle tables
+        db.execute("""CREATE TABLE IF NOT EXISTS cycle_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS cycle_settings (
+            user_id INTEGER PRIMARY KEY,
+            pre_cycle_days INTEGER DEFAULT 10,
+            FOREIGN KEY (user_id) REFERENCES users(id))""")
         db.commit()
         g.db = db
     return g.db
@@ -1042,6 +1057,119 @@ def products_page():
     products = db.execute("SELECT *, MIN(id) as min_id FROM products WHERE user_id IN ({}) GROUP BY name, kcal, fat, protein, carbs, per_grams ORDER BY name".format(",".join("?" * len(group_ids))), group_ids).fetchall()
     return render_template_string(PRODUCTS_PAGE, user=user, products=products)
 
+@app.route("/cycle")
+@login_required
+def cycle_page():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] != CYCLE_EMAIL:
+        return redirect(url_for("index"))
+    settings = db.execute("SELECT * FROM cycle_settings WHERE user_id=?", (uid,)).fetchone()
+    pre_days = settings["pre_cycle_days"] if settings else 10
+    entries = db.execute("SELECT * FROM cycle_log WHERE user_id=? ORDER BY start_date DESC LIMIT 24", (uid,)).fetchall()
+    # Calculate average cycle length
+    avg_length = None
+    if len(entries) >= 2:
+        diffs = []
+        sorted_entries = sorted(entries, key=lambda e: e["start_date"])
+        for i in range(1, len(sorted_entries)):
+            from datetime import datetime as dt
+            d1 = dt.strptime(sorted_entries[i-1]["start_date"], "%Y-%m-%d")
+            d2 = dt.strptime(sorted_entries[i]["start_date"], "%Y-%m-%d")
+            diff = (d2 - d1).days
+            if 15 < diff < 60:
+                diffs.append(diff)
+        if diffs:
+            avg_length = round(sum(diffs) / len(diffs), 1)
+    # Add duration to entries
+    entry_list = []
+    for e in entries:
+        d = dict(e)
+        if e["end_date"] and e["start_date"]:
+            from datetime import datetime as dt
+            try:
+                d1 = dt.strptime(e["start_date"], "%Y-%m-%d")
+                d2 = dt.strptime(e["end_date"], "%Y-%m-%d")
+                d["duration"] = (d2 - d1).days
+            except:
+                d["duration"] = None
+        else:
+            d["duration"] = None
+        entry_list.append(d)
+    return render_template_string(CYCLE_PAGE, user=user, entries=entry_list, pre_days=pre_days, avg_length=avg_length, active="cycle", session=session)
+
+@app.route("/api/cycle", methods=["POST"])
+@login_required
+def add_cycle():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] != CYCLE_EMAIL:
+        return redirect(url_for("index"))
+    lang = request.cookies.get("lang", "en")
+    start_date = request.form.get("start_date", "").strip()
+    end_date = request.form.get("end_date", "").strip() or None
+    notes = request.form.get("notes", "").strip() or None
+    if not start_date:
+        flash("Įveskite pradžios datą" if lang == "lt" else "Enter start date")
+        return redirect(url_for("cycle_page"))
+    if end_date and end_date < start_date:
+        flash("Pabaigos data negali būti ankstesnė" if lang == "lt" else "End date cannot be before start date")
+        return redirect(url_for("cycle_page"))
+    db.execute("INSERT INTO cycle_log (user_id, start_date, end_date, notes) VALUES (?,?,?,?)",
+               (uid, start_date, end_date, notes))
+    db.commit()
+    flash("Ciklas išsaugotas!" if lang == "lt" else "Cycle saved!")
+    return redirect(url_for("cycle_page"))
+
+@app.route("/api/cycle/<int:cid>/delete", methods=["POST"])
+@login_required
+def delete_cycle(cid):
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("DELETE FROM cycle_log WHERE id=? AND user_id=?", (cid, uid))
+    db.commit()
+    return redirect(url_for("cycle_page"))
+
+@app.route("/api/cycle/<int:cid>/edit", methods=["POST"])
+@login_required
+def edit_cycle(cid):
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] != CYCLE_EMAIL:
+        return redirect(url_for("index"))
+    start_date = request.form.get("start_date", "").strip()
+    end_date = request.form.get("end_date", "").strip() or None
+    notes = request.form.get("notes", "").strip() or None
+    if start_date:
+        db.execute("UPDATE cycle_log SET start_date=?, end_date=?, notes=? WHERE id=? AND user_id=?",
+                   (start_date, end_date, notes, cid, uid))
+        db.commit()
+    return redirect(url_for("cycle_page"))
+
+@app.route("/api/cycle/settings", methods=["POST"])
+@login_required
+def update_cycle_settings():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] != CYCLE_EMAIL:
+        return redirect(url_for("index"))
+    pre_days = int(request.form.get("pre_cycle_days", 10))
+    if pre_days < 1:
+        pre_days = 1
+    if pre_days > 20:
+        pre_days = 20
+    db.execute("""INSERT INTO cycle_settings (user_id, pre_cycle_days) VALUES (?,?)
+                  ON CONFLICT(user_id) DO UPDATE SET pre_cycle_days=?""",
+               (uid, pre_days, pre_days))
+    db.commit()
+    lang = request.cookies.get("lang", "en")
+    flash("Nustatymai išsaugoti!" if lang == "lt" else "Settings saved!")
+    return redirect(url_for("cycle_page"))
+
 @app.route("/history")
 @login_required
 def history_page():
@@ -1063,7 +1191,15 @@ def history_page():
     weight_entries = db.execute(
         "SELECT id, log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 90",
         (uid,)).fetchall()
-    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals, weight_entries=weight_entries)
+    # Cycle data for weight chart (Inga only)
+    cycle_data = []
+    cycle_pre_days = 10
+    if user["email"] == CYCLE_EMAIL:
+        cs = db.execute("SELECT pre_cycle_days FROM cycle_settings WHERE user_id=?", (uid,)).fetchone()
+        cycle_pre_days = cs["pre_cycle_days"] if cs else 10
+        cycle_data = db.execute("SELECT start_date, end_date FROM cycle_log WHERE user_id=? ORDER BY start_date DESC LIMIT 12", (uid,)).fetchall()
+        cycle_data = [{"start_date": c["start_date"], "end_date": c["end_date"]} for c in cycle_data]
+    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals, weight_entries=weight_entries, cycle_data=cycle_data, cycle_pre_days=cycle_pre_days)
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -1375,7 +1511,29 @@ var TRANSLATIONS = {
   'Weight (kg)': 'Svoris (kg)',
   'Target': 'Tikslas',
   'No weight entries yet.': 'Svorio įrašų dar nėra.',
-  'No history yet.': 'Istorijos dar nėra.'
+  'No history yet.': 'Istorijos dar nėra.',
+  // Cycle tracking
+  'Cycle': 'Ciklas',
+  'Cycle Tracking': 'Ciklo sekimas',
+  'Add Cycle Entry': 'Pridėti ciklo įrašą',
+  'Start Date': 'Pradžios data',
+  'End Date (optional)': 'Pabaigos data (neprivaloma)',
+  'Notes (optional)': 'Pastabos (neprivaloma)',
+  'Save Cycle': 'Išsaugoti ciklą',
+  'Cycle History': 'Ciklo istorija',
+  'Start': 'Pradžia',
+  'End': 'Pabaiga',
+  'Duration': 'Trukmė',
+  'Notes': 'Pastabos',
+  'days': 'dienos',
+  'No cycle entries yet.': 'Ciklo įrašų dar nėra.',
+  'Settings': 'Nustatymai',
+  'Pre-cycle days': 'Dienų prieš ciklą',
+  'Days before cycle when weight may increase:': 'Dienos prieš ciklą, kai svoris gali didėti:',
+  'Save Settings': 'Išsaugoti nustatymus',
+  'Average cycle length:': 'Vidutinis ciklo ilgis:',
+  'Pre-cycle window': 'Laikotarpis prieš ciklą',
+  'Cycle days': 'Ciklo dienos'
 };
 
 function getLang(){
@@ -1464,6 +1622,7 @@ NAV = """
     {% if user and user.picture %}<img src="{{ user.picture }}" class="nav-avatar" referrerpolicy="no-referrer">{% endif %}
     <button onclick="toggleLang()" id="langBtn" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;margin-left:4px;">EN</button>
     <script>(function(){try{var l=localStorage.getItem('lang');if(!l){var c=document.cookie.match('(^|;)\\s*lang=([^;]+)');l=c?c[2]:'en';}document.getElementById('langBtn').textContent=l==='en'?'LT':'EN';}catch(e){}})()</script>
+    {% if is_cycle_user %}<a href="/cycle" class="nav-link {{ 'active' if active=='cycle' }}">🩸 <span class="hide-mobile" data-i18n="Cycle">Cycle</span></a>{% endif %}
     {% if is_admin %}<a href="/admin" class="nav-link {{ 'active' if active=='admin' }}">⚙</a>{% endif %}
     <a href="/logout" class="nav-link" title="Logout" style="padding:4px 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></a>
   </div>
@@ -2756,11 +2915,13 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   </table>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <script>
   (function(){
     var entries = {{ weight_entries|tojson }};
     var sorted = entries.slice().reverse();
     var labels = sorted.map(function(e){ return e.log_date.slice(5); });
+    var fullDates = sorted.map(function(e){ return e.log_date; });
     var data = sorted.map(function(e){ return e.weight_kg; });
     var datasets = [{
       label: getLang()==='lt'?'Svoris (kg)':'Weight (kg)',
@@ -2783,6 +2944,51 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
       fill: false
     });
     {% endif %}
+
+    // Cycle bands (Inga only)
+    var annotations = {};
+    {% if cycle_data %}
+    var cycleData = {{ cycle_data|tojson }};
+    var preDays = {{ cycle_pre_days }};
+    var lt = getLang()==='lt';
+    var annIdx = 0;
+    cycleData.forEach(function(c) {
+      // Pre-cycle band (orange)
+      var preStart = new Date(c.start_date);
+      preStart.setDate(preStart.getDate() - preDays);
+      var preStartStr = preStart.toISOString().slice(5,10);
+      var cycleStartStr = c.start_date.slice(5);
+      var preStartIdx = -1, cycleStartIdx = -1, cycleEndIdx = -1;
+      for (var i = 0; i < fullDates.length; i++) {
+        var d = fullDates[i];
+        var preS = preStart.toISOString().slice(0,10);
+        if (preStartIdx === -1 && d >= preS) preStartIdx = i;
+        if (cycleStartIdx === -1 && d >= c.start_date) cycleStartIdx = i;
+        if (c.end_date && cycleEndIdx === -1 && d >= c.end_date) cycleEndIdx = i;
+      }
+      if (preStartIdx >= 0 && cycleStartIdx >= 0 && preStartIdx < cycleStartIdx) {
+        annotations['pre'+annIdx] = {
+          type: 'box', xMin: preStartIdx, xMax: cycleStartIdx,
+          backgroundColor: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.3)', borderWidth: 1,
+          label: { display: annIdx===0, content: lt?'Prieš ciklą':'Pre-cycle', position: 'start', color: '#f59e0b', font: {size:10} }
+        };
+      }
+      // Cycle band (red)
+      if (cycleStartIdx >= 0) {
+        var endIdx = c.end_date ? cycleEndIdx : cycleStartIdx + 1;
+        if (endIdx < 0) endIdx = fullDates.length - 1;
+        if (endIdx >= cycleStartIdx) {
+          annotations['cyc'+annIdx] = {
+            type: 'box', xMin: cycleStartIdx, xMax: endIdx,
+            backgroundColor: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', borderWidth: 1,
+            label: { display: annIdx===0, content: lt?'Ciklas':'Cycle', position: 'start', color: '#ef4444', font: {size:10} }
+          };
+        }
+      }
+      annIdx++;
+    });
+    {% endif %}
+
     var ctx = document.getElementById('weightChart').getContext('2d');
     new Chart(ctx, {
       type: 'line',
@@ -2790,7 +2996,10 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#9ca3af' } } },
+        plugins: {
+          legend: { labels: { color: '#9ca3af' } },
+          annotation: { annotations: annotations }
+        },
         scales: {
           x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } },
           y: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } }
@@ -2805,6 +3014,101 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
 </div>
 
 </div></body></html>"""
+
+CYCLE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cycle - CalorieTracker</title>""" + STYLE + """</head><body>
+""" + NAV.replace("active=='cycle'", "True") + """
+<div class="container">
+
+<!-- SETTINGS -->
+<div class="card">
+  <div class="card-title" data-i18n="Settings">Settings</div>
+  <form method="POST" action="/api/cycle/settings" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+    <div class="form-group" style="flex:1;min-width:200px">
+      <label data-i18n="Days before cycle when weight may increase:">Days before cycle when weight may increase:</label>
+      <input name="pre_cycle_days" type="number" min="1" max="20" value="{{ pre_days }}" style="max-width:80px;">
+    </div>
+    <button type="submit" class="btn btn-ghost" data-i18n="Save Settings">Save Settings</button>
+  </form>
+  {% if avg_length %}
+  <div style="margin-top:8px;font-size:13px;color:var(--muted);">
+    <span data-i18n="Average cycle length:">Average cycle length:</span> <span style="color:var(--accent-bright);font-weight:600;">{{ avg_length }}</span> <span data-i18n="days">days</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ADD ENTRY -->
+<div class="card">
+  <div class="card-title" data-i18n="Add Cycle Entry">Add Cycle Entry</div>
+  <form method="POST" action="/api/cycle" id="cycleForm" class="form-row" style="flex-wrap:wrap;gap:8px;">
+    <div class="form-group"><label data-i18n="Start Date">Start Date</label><input name="start_date" type="date" required></div>
+    <div class="form-group"><label data-i18n="End Date (optional)">End Date (optional)</label><input name="end_date" type="date"></div>
+    <div class="form-group" style="flex:2;min-width:150px"><label data-i18n="Notes (optional)">Notes (optional)</label><input name="notes" type="text" placeholder="..."></div>
+    <button type="submit" class="btn" id="cycleSubmitBtn" data-i18n="Save Cycle">Save Cycle</button>
+    <button type="button" id="cycleCancelBtn" onclick="resetCycleForm()" class="btn btn-ghost" style="display:none" data-i18n="Cancel">Cancel</button>
+  </form>
+</div>
+
+<!-- HISTORY -->
+<div class="card">
+  <div class="card-title" data-i18n="Cycle History">Cycle History</div>
+  {% if entries %}
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <tr>
+      <th data-i18n="Start">Start</th>
+      <th data-i18n="End">End</th>
+      <th data-i18n="Duration">Duration</th>
+      <th data-i18n="Notes">Notes</th>
+      <th></th>
+    </tr>
+    {% for e in entries %}
+    <tr>
+      <td style="font-weight:500;color:var(--text-strong)">{{ e.start_date }}</td>
+      <td>{{ e.end_date or '-' }}</td>
+      <td style="color:var(--accent-bright)">
+        {% if e.duration is not none %}{{ e.duration }} <span style="font-size:11px;color:var(--muted)" data-i18n="days">days</span>{% else %}-{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:12px">{{ e.notes or '-' }}</td>
+      <td style="white-space:nowrap">
+        <button onclick="editCycle({{ e.id }}, '{{ e.start_date }}', '{{ e.end_date or '' }}', '{{ e.notes or '' }}')" class="btn-ghost btn-sm" style="font-size:11px;padding:2px 8px">✎</button>
+        <form method="POST" action="/api/cycle/{{ e.id }}/delete" style="display:inline" onsubmit="return confirm(getLang()==='lt'?'Ištrinti įrašą?':'Delete entry?')">
+          <button type="submit" class="btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted)">✕</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);font-style:italic" data-i18n="No cycle entries yet.">No cycle entries yet.</p>
+  {% endif %}
+</div>
+
+</div>
+<script>
+function editCycle(id, start, end, notes) {
+  var f = document.getElementById('cycleForm');
+  f.action = '/api/cycle/' + id + '/edit';
+  f.querySelector('[name="start_date"]').value = start;
+  f.querySelector('[name="end_date"]').value = end;
+  f.querySelector('[name="notes"]').value = notes;
+  document.getElementById('cycleSubmitBtn').textContent = getLang()==='lt' ? 'Atnaujinti' : 'Update';
+  document.getElementById('cycleSubmitBtn').style.background = '#f59e0b';
+  document.getElementById('cycleCancelBtn').style.display = '';
+}
+function resetCycleForm() {
+  var f = document.getElementById('cycleForm');
+  f.action = '/api/cycle';
+  f.reset();
+  var lang = getLang();
+  document.getElementById('cycleSubmitBtn').textContent = lang==='lt' ? 'Išsaugoti ciklą' : 'Save Cycle';
+  document.getElementById('cycleSubmitBtn').style.background = '';
+  document.getElementById('cycleCancelBtn').style.display = 'none';
+}
+</script>
+</body></html>"""
+
 
 INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CalorieTracker - Invite</title>""" + STYLE + """
