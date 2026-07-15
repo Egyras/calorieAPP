@@ -182,6 +182,16 @@ def get_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, log_date))""")
         db.commit()
+        # Migrate: add sleep_log table
+        db.execute("""CREATE TABLE IF NOT EXISTS sleep_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            score INTEGER NOT NULL,
+            log_date TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, log_date))""")
+        db.commit()
         # Migrate: add cycle tables
         db.execute("""CREATE TABLE IF NOT EXISTS cycle_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -620,12 +630,17 @@ def index():
     # Weight data
     today_weight = db.execute("SELECT weight_kg FROM weight_log WHERE user_id=? AND log_date=?", (uid, today)).fetchone()
     recent_weights = db.execute("SELECT log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 7", (uid,)).fetchall()
+    # Sleep data (Inga only)
+    today_sleep = None
+    if user["email"] == CYCLE_EMAIL:
+        today_sleep = db.execute("SELECT score FROM sleep_log WHERE user_id=? AND log_date=?", (uid, today)).fetchone()
 
     return render_template_string(MAIN_PAGE,
         user=user, today=today, products=products, top_products=top_products,
         entries=entries, totals=totals, goals=goals,
         today_weight=today_weight,
         recent_weights=recent_weights,
+        today_sleep=today_sleep,
         user_groups=get_user_groups(db, uid),
         pending_requests=get_pending_requests(db, uid),
         sent_requests=get_sent_requests(db, uid),
@@ -864,6 +879,43 @@ def delete_weight(wid):
     uid = session["user_id"]
     db = get_db()
     db.execute("DELETE FROM weight_log WHERE id=? AND user_id=?", (wid, uid))
+    db.commit()
+    return redirect(request.referrer or url_for("history_page"))
+
+@app.route("/api/sleep", methods=["POST"])
+@login_required
+def log_sleep():
+    uid = session["user_id"]
+    db = get_db()
+    user = current_user()
+    if user["email"] != CYCLE_EMAIL:
+        return redirect(url_for("index"))
+    lang = request.cookies.get("lang", "en")
+    score = request.form.get("score", "").strip()
+    log_date = request.form.get("date", date.today().isoformat())
+    if not score:
+        flash("Įveskite miego balą" if lang == "lt" else "Enter sleep score")
+        return redirect(request.referrer or url_for("index"))
+    try:
+        score_int = int(score)
+        if score_int < 0 or score_int > 100:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash("Neteisingas miego balas (0-100)" if lang == "lt" else "Invalid sleep score (0-100)")
+        return redirect(request.referrer or url_for("index"))
+    db.execute("""INSERT INTO sleep_log (user_id, score, log_date) VALUES (?,?,?)
+                  ON CONFLICT(user_id, log_date) DO UPDATE SET score=?""",
+               (uid, score_int, log_date, score_int))
+    db.commit()
+    flash("Miego balas išsaugotas!" if lang == "lt" else "Sleep score saved!")
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/sleep/<int:sid>/delete", methods=["POST"])
+@login_required
+def delete_sleep(sid):
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("DELETE FROM sleep_log WHERE id=? AND user_id=?", (sid, uid))
     db.commit()
     return redirect(request.referrer or url_for("history_page"))
 
@@ -1191,6 +1243,12 @@ def history_page():
     weight_entries = db.execute(
         "SELECT id, log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 90",
         (uid,)).fetchall()
+    # Sleep data (Inga only)
+    sleep_entries = []
+    if user["email"] == CYCLE_EMAIL:
+        sleep_entries = db.execute(
+            "SELECT id, log_date, score FROM sleep_log WHERE user_id=? ORDER BY log_date DESC LIMIT 90",
+            (uid,)).fetchall()
     # Cycle data for weight chart (Inga only)
     cycle_data = []
     cycle_pre_days = 10
@@ -1199,7 +1257,7 @@ def history_page():
         cycle_pre_days = cs["pre_cycle_days"] if cs else 10
         cycle_data = db.execute("SELECT start_date, end_date FROM cycle_log WHERE user_id=? ORDER BY start_date DESC LIMIT 12", (uid,)).fetchall()
         cycle_data = [{"start_date": c["start_date"], "end_date": c["end_date"]} for c in cycle_data]
-    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals, weight_entries=weight_entries, cycle_data=cycle_data, cycle_pre_days=cycle_pre_days)
+    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals, weight_entries=weight_entries, cycle_data=cycle_data, cycle_pre_days=cycle_pre_days, sleep_entries=sleep_entries)
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -1533,7 +1591,13 @@ var TRANSLATIONS = {
   'Save Settings': 'Išsaugoti nustatymus',
   'Average cycle length:': 'Vidutinis ciklo ilgis:',
   'Pre-cycle window': 'Laikotarpis prieš ciklą',
-  'Cycle days': 'Ciklo dienos'
+  'Cycle days': 'Ciklo dienos',
+  // Sleep tracking
+  'Sleep Score': 'Miego balas',
+  'Garmin Sleep Score (0-100)': 'Garmin miego balas (0-100)',
+  'Save Score': 'Išsaugoti balą',
+  'Sleep History': 'Miego istorija',
+  'Score': 'Balas'
 };
 
 function getLang(){
@@ -2051,6 +2115,21 @@ document.addEventListener('click',function(e){
   </div>
   {% endif %}
 </div>
+
+<!-- SLEEP (Inga only) -->
+{% if is_cycle_user %}
+<div class="card">
+  <div class="card-title" data-i18n="Sleep Score">Sleep Score</div>
+  <form method="POST" action="/api/sleep" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+    <input type="hidden" name="date" value="{{ today }}">
+    <div class="form-group" style="flex:1;min-width:120px">
+      <label data-i18n="Garmin Sleep Score (0-100)">Garmin Sleep Score (0-100)</label>
+      <input name="score" type="number" min="0" max="100" value="{{ today_sleep.score if today_sleep else '' }}" placeholder="85">
+    </div>
+    <button type="submit" class="btn btn-ghost" data-i18n="Save Score">Save Score</button>
+  </form>
+</div>
+{% endif %}
 
 <!-- GROUPS -->
 
@@ -3012,6 +3091,72 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   <p style="color:var(--muted);font-style:italic" data-i18n="No weight entries yet.">No weight entries yet.</p>
   {% endif %}
 </div>
+
+<!-- SLEEP HISTORY (Inga only) -->
+{% if sleep_entries is defined and sleep_entries %}
+<div class="card">
+  <div class="card-title" data-i18n="Sleep History">Sleep History</div>
+  <div style="margin-bottom:16px;">
+    <canvas id="sleepChart" style="width:100%;max-height:250px;"></canvas>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <tr>
+      <th data-i18n="Date">Date</th>
+      <th data-i18n="Score">Score</th>
+      <th></th>
+    </tr>
+    {% for s in sleep_entries %}
+    <tr>
+      <td style="font-weight:500;color:var(--text-strong)">{{ s.log_date }}</td>
+      <td>
+        <span style="font-weight:600;color:{% if s.score >= 80 %}#10b981{% elif s.score >= 60 %}#f59e0b{% else %}#ef4444{% endif %}">
+          {{ s.score }}
+        </span>
+        <span style="font-size:11px;color:var(--muted)">/100</span>
+      </td>
+      <td>
+        <form method="POST" action="/api/sleep/{{ s.id }}/delete" style="display:inline" onsubmit="return confirm(getLang()==='lt'?'Ištrinti įrašą?':'Delete entry?')">
+          <button type="submit" class="btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted)">✕</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <script>
+  (function(){
+    var entries = {{ sleep_entries|tojson }};
+    var sorted = entries.slice().reverse();
+    var labels = sorted.map(function(e){ return e.log_date.slice(5); });
+    var data = sorted.map(function(e){ return e.score; });
+    var colors = data.map(function(s){ return s >= 80 ? '#10b981' : s >= 60 ? '#f59e0b' : '#ef4444'; });
+    var ctx = document.getElementById('sleepChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: getLang()==='lt'?'Miego balas':'Sleep Score',
+          data: data,
+          backgroundColor: colors,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#9ca3af' } } },
+        scales: {
+          x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { min: 0, max: 100, ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+      }
+    });
+  })();
+  </script>
+</div>
+{% endif %}
 
 </div></body></html>"""
 
