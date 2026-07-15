@@ -873,6 +873,21 @@ def log_weight():
     flash("Svoris išsaugotas!" if lang == "lt" else "Weight saved!")
     return redirect(request.referrer or url_for("index"))
 
+@app.route("/api/weight/goal", methods=["POST"])
+@login_required
+def update_weight_goal():
+    uid = session["user_id"]
+    db = get_db()
+    tw = request.form.get("target_weight", "").strip()
+    target_weight = float(tw) if tw else None
+    db.execute("""INSERT INTO daily_goals (user_id, target_weight) VALUES (?,?)
+                  ON CONFLICT(user_id) DO UPDATE SET target_weight=?""",
+               (uid, target_weight, target_weight))
+    db.commit()
+    lang = request.cookies.get("lang", "en")
+    flash("Siekiamas svoris išsaugotas!" if lang == "lt" else "Target weight saved!")
+    return redirect(request.referrer or url_for("index"))
+
 @app.route("/api/weight/<int:wid>/delete", methods=["POST"])
 @login_required
 def delete_weight(wid):
@@ -1564,6 +1579,7 @@ var TRANSLATIONS = {
   'Weight Tracking': 'Svorio sekimas',
   "Today\'s Weight (kg)": 'Šiandienos svoris (kg)',
   'Save Weight': 'Išsaugoti svorį',
+  'Save Target': 'Išsaugoti tikslą',
   'Recent:': 'Paskutiniai:',
   'Weight History': 'Svorio istorija',
   'Weight (kg)': 'Svoris (kg)',
@@ -2079,7 +2095,6 @@ document.addEventListener('click',function(e){
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" type="number" value="{{ goals.fat|int if goals else 65 }}"></div>
     <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" type="number" value="{{ goals.protein|int if goals else 50 }}"></div>
     <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" type="number" value="{{ goals.carbs|int if goals else 300 }}"></div>
-    <div class="form-group"><label data-i18n="Target Weight (kg)">Target Weight (kg)</label><input name="target_weight" type="number" step="any" min="30" max="300" value="{{ goals.target_weight|default('', true) }}" placeholder="75"></div>
     <button type="submit" class="btn btn-ghost" data-i18n="Save Goals">Save Goals</button>
   </form>
 </div>
@@ -2094,6 +2109,13 @@ document.addEventListener('click',function(e){
       <input name="weight" type="number" step="any" min="20" max="500" value="{{ today_weight.weight_kg if today_weight else '' }}" placeholder="75.5">
     </div>
     <button type="submit" class="btn btn-ghost" data-i18n="Save Weight">Save Weight</button>
+  </form>
+  <form method="POST" action="/api/weight/goal" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+    <div class="form-group" style="flex:1;min-width:120px">
+      <label data-i18n="Target Weight (kg)">Target Weight (kg)</label>
+      <input name="target_weight" type="number" step="any" min="30" max="300" value="{{ goals.target_weight|default('', true) }}" placeholder="60">
+    </div>
+    <button type="submit" class="btn btn-ghost" data-i18n="Save Target">Save Target</button>
   </form>
   {% if recent_weights %}
   <div style="margin-top:12px;">
