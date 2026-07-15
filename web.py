@@ -305,8 +305,8 @@ def inject_admin():
     if "user_id" in session:
         u = current_user()
         if u:
-            return {"is_admin": u["email"] in ADMIN_EMAILS}
-    return {"is_admin": False}
+            return {"is_admin": u["email"] in ADMIN_EMAILS, "is_cycle_user": u["email"] == CYCLE_EMAIL}
+    return {"is_admin": False, "is_cycle_user": False}
 
 def current_user():
     if "user_id" not in session:
