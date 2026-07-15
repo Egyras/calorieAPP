@@ -58,11 +58,12 @@ def get_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
             CREATE TABLE IF NOT EXISTS daily_goals (
-                user_id    INTEGER PRIMARY KEY,
-                kcal       REAL DEFAULT 2000,
-                fat        REAL DEFAULT 65,
-                protein    REAL DEFAULT 50,
-                carbs      REAL DEFAULT 300,
+                user_id       INTEGER PRIMARY KEY,
+                kcal          REAL DEFAULT 2000,
+                fat           REAL DEFAULT 65,
+                protein       REAL DEFAULT 50,
+                carbs         REAL DEFAULT 300,
+                target_weight REAL DEFAULT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
             CREATE TABLE IF NOT EXISTS groups (
@@ -130,6 +131,15 @@ def get_db():
                 FOREIGN KEY (recipe_id) REFERENCES recipes(id),
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
+            CREATE TABLE IF NOT EXISTS weight_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                weight_kg  REAL NOT NULL,
+                log_date   TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, log_date)
+            );
         """)
         # Migrate: add allowed_emails table + seed from env
         db.execute("""CREATE TABLE IF NOT EXISTS allowed_emails (
@@ -155,6 +165,21 @@ def get_db():
             db.commit()
         except Exception:
             pass  # column already exists
+        # Migrate: add target_weight column if missing
+        try:
+            db.execute("ALTER TABLE daily_goals ADD COLUMN target_weight REAL DEFAULT NULL")
+            db.commit()
+        except Exception:
+            pass  # column already exists
+        # Migrate: add weight_log table
+        db.execute("""CREATE TABLE IF NOT EXISTS weight_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            weight_kg REAL NOT NULL,
+            log_date TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, log_date))""")
         db.commit()
         g.db = db
     return g.db
@@ -577,9 +602,15 @@ def index():
         token = inv_token["token"]
     invite_url = request.host_url.rstrip("/") + "/invite/" + token
 
+    # Weight data
+    today_weight = db.execute("SELECT weight_kg FROM weight_log WHERE user_id=? AND log_date=?", (uid, today)).fetchone()
+    recent_weights = db.execute("SELECT log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 7", (uid,)).fetchall()
+
     return render_template_string(MAIN_PAGE,
         user=user, today=today, products=products, top_products=top_products,
         entries=entries, totals=totals, goals=goals,
+        today_weight=today_weight,
+        recent_weights=recent_weights,
         user_groups=get_user_groups(db, uid),
         pending_requests=get_pending_requests(db, uid),
         sent_requests=get_sent_requests(db, uid),
@@ -769,19 +800,57 @@ def delete_log(lid):
 def update_goals():
     uid = session["user_id"]
     db = get_db()
-    db.execute("""INSERT INTO daily_goals (user_id, kcal, fat, protein, carbs) VALUES (?,?,?,?,?)
-                  ON CONFLICT(user_id) DO UPDATE SET kcal=?, fat=?, protein=?, carbs=?""",
+    tw = request.form.get("target_weight", "").strip()
+    target_weight = float(tw) if tw else None
+    db.execute("""INSERT INTO daily_goals (user_id, kcal, fat, protein, carbs, target_weight) VALUES (?,?,?,?,?,?)
+                  ON CONFLICT(user_id) DO UPDATE SET kcal=?, fat=?, protein=?, carbs=?, target_weight=?""",
                (uid,
                 float(request.form.get("kcal", 2000)),
                 float(request.form.get("fat", 65)),
                 float(request.form.get("protein", 50)),
                 float(request.form.get("carbs", 300)),
+                target_weight,
                 float(request.form.get("kcal", 2000)),
                 float(request.form.get("fat", 65)),
                 float(request.form.get("protein", 50)),
-                float(request.form.get("carbs", 300))))
+                float(request.form.get("carbs", 300)),
+                target_weight))
     db.commit()
     return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/weight", methods=["POST"])
+@login_required
+def log_weight():
+    uid = session["user_id"]
+    db = get_db()
+    lang = request.cookies.get("lang", "en")
+    w = request.form.get("weight", "").strip()
+    log_date = request.form.get("date", date.today().isoformat())
+    if not w:
+        flash("Įveskite svorį" if lang == "lt" else "Enter weight")
+        return redirect(request.referrer or url_for("index"))
+    try:
+        weight_kg = float(w)
+        if weight_kg <= 0 or weight_kg > 500:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash("Neteisingas svoris" if lang == "lt" else "Invalid weight value")
+        return redirect(request.referrer or url_for("index"))
+    db.execute("""INSERT INTO weight_log (user_id, weight_kg, log_date) VALUES (?,?,?)
+                  ON CONFLICT(user_id, log_date) DO UPDATE SET weight_kg=?""",
+               (uid, weight_kg, log_date, weight_kg))
+    db.commit()
+    flash("Svoris išsaugotas!" if lang == "lt" else "Weight saved!")
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/api/weight/<int:wid>/delete", methods=["POST"])
+@login_required
+def delete_weight(wid):
+    uid = session["user_id"]
+    db = get_db()
+    db.execute("DELETE FROM weight_log WHERE id=? AND user_id=?", (wid, uid))
+    db.commit()
+    return redirect(request.referrer or url_for("history_page"))
 
 @app.route("/api/group/create", methods=["POST"])
 @login_required
@@ -991,7 +1060,10 @@ def history_page():
         WHERE dl.user_id=?
         GROUP BY dl.log_date ORDER BY dl.log_date DESC LIMIT 30
     """, (uid,)).fetchall()
-    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals)
+    weight_entries = db.execute(
+        "SELECT id, log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 90",
+        (uid,)).fetchall()
+    return render_template_string(HISTORY_PAGE, user=user, days=days, goals=goals, weight_entries=weight_entries)
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -1292,7 +1364,18 @@ var TRANSLATIONS = {
   'Kcal': 'Kcal',
   'Quick Add': 'Greitas pridėjimas',
   'e.g. Chicken Breast': 'pvz. Vištienos krūtinėlė',
-  'Load default products': 'Įkelti standartinius produktus'
+  'Load default products': 'Įkelti standartinius produktus',
+  // Weight tracking
+  'Target Weight (kg)': 'Siekiamas svoris (kg)',
+  'Weight Tracking': 'Svorio sekimas',
+  "Today\'s Weight (kg)": 'Šiandienos svoris (kg)',
+  'Save Weight': 'Išsaugoti svorį',
+  'Recent:': 'Paskutiniai:',
+  'Weight History': 'Svorio istorija',
+  'Weight (kg)': 'Svoris (kg)',
+  'Target': 'Tikslas',
+  'No weight entries yet.': 'Svorio įrašų dar nėra.',
+  'No history yet.': 'Istorijos dar nėra.'
 };
 
 function getLang(){
@@ -1773,8 +1856,41 @@ document.addEventListener('click',function(e){
     <div class="form-group"><label data-i18n="Fat (g)">Fat (g)</label><input name="fat" type="number" value="{{ goals.fat|int if goals else 65 }}"></div>
     <div class="form-group"><label data-i18n="Protein (g)">Protein (g)</label><input name="protein" type="number" value="{{ goals.protein|int if goals else 50 }}"></div>
     <div class="form-group"><label data-i18n="Carbs (g)">Carbs (g)</label><input name="carbs" type="number" value="{{ goals.carbs|int if goals else 300 }}"></div>
+    <div class="form-group"><label data-i18n="Target Weight (kg)">Target Weight (kg)</label><input name="target_weight" type="number" step="any" min="30" max="300" value="{{ goals.target_weight|default('', true) }}" placeholder="75"></div>
     <button type="submit" class="btn btn-ghost" data-i18n="Save Goals">Save Goals</button>
   </form>
+</div>
+
+<!-- WEIGHT -->
+<div class="card">
+  <div class="card-title" data-i18n="Weight Tracking">Weight Tracking</div>
+  <form method="POST" action="/api/weight" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+    <input type="hidden" name="date" value="{{ today }}">
+    <div class="form-group" style="flex:1;min-width:120px">
+      <label data-i18n="Today's Weight (kg)">Today's Weight (kg)</label>
+      <input name="weight" type="number" step="any" min="20" max="500" value="{{ today_weight.weight_kg if today_weight else '' }}" placeholder="75.5">
+    </div>
+    <button type="submit" class="btn btn-ghost" data-i18n="Save Weight">Save Weight</button>
+  </form>
+  {% if recent_weights %}
+  <div style="margin-top:12px;">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;" data-i18n="Recent:">Recent:</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      {% for w in recent_weights %}
+      <div style="background:var(--surface2);padding:4px 10px;border-radius:6px;font-size:12px;">
+        <span style="color:var(--muted)">{{ w.log_date[5:] }}</span>
+        <span style="color:var(--accent-bright);font-weight:600;margin-left:4px">{{ w.weight_kg }}kg</span>
+        {% if goals and goals.target_weight %}
+          {% set diff = w.weight_kg - goals.target_weight %}
+          <span style="font-size:10px;color:{% if diff > 0 %}var(--kcal-color,#ef4444){% elif diff < 0 %}var(--accent){% else %}var(--muted){% endif %};margin-left:2px">
+            {{ '%+.1f'|format(diff) }}
+          </span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- GROUPS -->
@@ -2604,6 +2720,90 @@ HISTORY_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="v
   <p style="color:var(--muted);font-style:italic" data-i18n="No history yet.">No history yet.</p>
   {% endif %}
 </div>
+
+<!-- WEIGHT HISTORY -->
+<div class="card">
+  <div class="card-title" data-i18n="Weight History">Weight History</div>
+  {% if weight_entries %}
+  <div style="margin-bottom:16px;">
+    <canvas id="weightChart" style="width:100%;max-height:250px;"></canvas>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <tr>
+      <th data-i18n="Date">Date</th>
+      <th data-i18n="Weight (kg)">Weight (kg)</th>
+      {% if goals and goals.target_weight %}<th data-i18n="Target">Target</th><th>+/-</th>{% endif %}
+      <th></th>
+    </tr>
+    {% for w in weight_entries %}
+    <tr>
+      <td style="font-weight:500;color:var(--text-strong)">{{ w.log_date }}</td>
+      <td style="color:var(--accent-bright);font-weight:600">{{ w.weight_kg }} kg</td>
+      {% if goals and goals.target_weight %}
+      <td style="color:var(--muted)">{{ goals.target_weight }} kg</td>
+      <td style="color:{% if w.weight_kg > goals.target_weight %}var(--kcal-color,#ef4444){% elif w.weight_kg < goals.target_weight %}var(--accent){% else %}var(--muted){% endif %}">
+        {{ '%+.1f'|format(w.weight_kg - goals.target_weight) }} kg
+      </td>
+      {% endif %}
+      <td>
+        <form method="POST" action="/api/weight/{{ w.id }}/delete" style="display:inline" onsubmit="return confirm(getLang()==='lt'?'Ištrinti įrašą?':'Delete entry?')">
+          <button type="submit" class="btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted)">✕</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+  (function(){
+    var entries = {{ weight_entries|tojson }};
+    var sorted = entries.slice().reverse();
+    var labels = sorted.map(function(e){ return e.log_date.slice(5); });
+    var data = sorted.map(function(e){ return e.weight_kg; });
+    var datasets = [{
+      label: getLang()==='lt'?'Svoris (kg)':'Weight (kg)',
+      data: data,
+      borderColor: '#10b981',
+      backgroundColor: 'rgba(16,185,129,0.1)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 4,
+      pointBackgroundColor: '#10b981'
+    }];
+    {% if goals and goals.target_weight %}
+    datasets.push({
+      label: getLang()==='lt'?'Tikslas':'Target',
+      data: sorted.map(function(){ return {{ goals.target_weight }}; }),
+      borderColor: '#f59e0b',
+      borderDash: [6,3],
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: false
+    });
+    {% endif %}
+    var ctx = document.getElementById('weightChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#9ca3af' } } },
+        scales: {
+          x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+      }
+    });
+  })();
+  </script>
+  {% else %}
+  <p style="color:var(--muted);font-style:italic" data-i18n="No weight entries yet.">No weight entries yet.</p>
+  {% endif %}
+</div>
+
 </div></body></html>"""
 
 INVITE_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
