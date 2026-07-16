@@ -630,6 +630,28 @@ def index():
     # Weight data
     today_weight = db.execute("SELECT weight_kg FROM weight_log WHERE user_id=? AND log_date=?", (uid, today)).fetchone()
     recent_weights = db.execute("SELECT log_date, weight_kg FROM weight_log WHERE user_id=? ORDER BY log_date DESC LIMIT 7", (uid,)).fetchall()
+    # Weight stall detection (need 4+ weeks of data)
+    weight_stall = None
+    four_weeks = db.execute(
+        "SELECT log_date, weight_kg FROM weight_log WHERE user_id=? AND log_date >= date('now', '-28 days') ORDER BY log_date",
+        (uid,)).fetchall()
+    if len(four_weeks) >= 7:  # at least ~2 entries per week
+        weights = [w["weight_kg"] for w in four_weeks]
+        w_min, w_max = min(weights), max(weights)
+        w_range = w_max - w_min
+        if w_range <= 1.0:  # stable within 1kg over 4 weeks
+            # Get average calorie intake over same period
+            avg_cal = db.execute(
+                """SELECT ROUND(AVG(daily_kcal),0) as avg_kcal FROM (
+                    SELECT dl.log_date, SUM(p.kcal * dl.grams / p.per_grams) as daily_kcal
+                    FROM daily_log dl JOIN products p ON dl.product_id = p.id
+                    WHERE dl.user_id=? AND dl.log_date >= date('now', '-28 days')
+                    GROUP BY dl.log_date
+                )""", (uid,)).fetchone()
+            avg_kcal = int(avg_cal["avg_kcal"]) if avg_cal and avg_cal["avg_kcal"] else None
+            avg_weight = round(sum(weights) / len(weights), 1)
+            weight_stall = {"range": round(w_range, 1), "avg_kcal": avg_kcal, "avg_weight": avg_weight, "weeks": 4, "entries": len(four_weeks)}
+
     # Sleep data (Inga only)
     today_sleep = None
     if user["email"] == CYCLE_EMAIL:
@@ -641,6 +663,7 @@ def index():
         today_weight=today_weight,
         recent_weights=recent_weights,
         today_sleep=today_sleep,
+        weight_stall=weight_stall,
         user_groups=get_user_groups(db, uid),
         pending_requests=get_pending_requests(db, uid),
         sent_requests=get_sent_requests(db, uid),
@@ -1580,6 +1603,11 @@ var TRANSLATIONS = {
   "Today\'s Weight (kg)": 'Šiandienos svoris (kg)',
   'Save Weight': 'Išsaugoti svorį',
   'Save Target': 'Išsaugoti tikslą',
+  'Weight plateau detected': 'Aptiktas svorio plato',
+  'Your weight has been stable for 4 weeks': 'Jūsų svoris buvo stabilus 4 savaites',
+  'Average calorie intake:': 'Vidutinis kalorijų suvartojimas:',
+  'day': 'dieną',
+  'Learn about weight plateaus →': 'Sužinokite apie svorio plato →',
   'Recent:': 'Paskutiniai:',
   'Weight History': 'Svorio istorija',
   'Weight (kg)': 'Svoris (kg)',
@@ -2117,6 +2145,26 @@ document.addEventListener('click',function(e){
     </div>
     <button type="submit" class="btn btn-ghost" data-i18n="Save Target">Save Target</button>
   </form>
+  {% if weight_stall %}
+  <div style="margin-top:12px;padding:12px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;">
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <span style="font-size:18px;">📊</span>
+      <div style="flex:1;">
+        <div style="font-size:13px;color:var(--text);font-weight:500;">
+          <span data-i18n="Weight plateau detected">Weight plateau detected</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+          <span data-i18n="Your weight has been stable for 4 weeks">Your weight has been stable for 4 weeks</span>
+          (±{{ weight_stall.range }}kg, ~{{ weight_stall.avg_weight }}kg).
+          {% if weight_stall.avg_kcal %}
+          <span data-i18n="Average calorie intake:">Average calorie intake:</span> {{ weight_stall.avg_kcal }} kcal/<span data-i18n="day">day</span>.
+          {% endif %}
+        </div>
+        <a href="https://www.healthline.com/nutrition/weight-loss-plateau" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);margin-top:4px;display:inline-block;" data-i18n="Learn about weight plateaus →">Learn about weight plateaus →</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
   {% if recent_weights %}
   <div style="margin-top:12px;">
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px;" data-i18n="Recent:">Recent:</div>
