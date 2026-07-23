@@ -669,6 +669,93 @@ def index():
         sent_requests=get_sent_requests(db, uid),
         invite_url=invite_url)
 
+@app.route("/manifest.json")
+def manifest():
+    return {
+        "name": "CalorieTracker",
+        "short_name": "Calories",
+        "description": "Track calories, protein, fat & carbs",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0f1117",
+        "theme_color": "#10b981",
+        "orientation": "portrait",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+        ]
+    }
+
+@app.route("/sw.js")
+def service_worker():
+    sw_code = """
+self.addEventListener('install', function(e) { self.skipWaiting(); });
+self.addEventListener('activate', function(e) { clients.claim(); });
+self.addEventListener('fetch', function(e) {
+  e.respondWith(fetch(e.request).catch(function() {
+    return caches.match(e.request);
+  }));
+});
+"""
+    return app.response_class(sw_code, mimetype='application/javascript')
+
+@app.route("/icon-192.png")
+def icon_192():
+    return generate_icon(192)
+
+@app.route("/icon-512.png")
+def icon_512():
+    return generate_icon(512)
+
+def generate_icon(size):
+    """Generate a simple PNG icon with a flame symbol."""
+    import struct, zlib, io
+    # Create a simple icon: dark rounded rect with green circle and white flame shape
+    pixels = []
+    center = size // 2
+    radius = size // 2.5
+    for y in range(size):
+        row = []
+        for x in range(size):
+            # Background: dark
+            r, g, b, a = 15, 17, 23, 255
+            # Rounded rect
+            corner_r = size // 5
+            in_rect = True
+            if x < corner_r and y < corner_r:
+                if (x - corner_r)**2 + (y - corner_r)**2 > corner_r**2: in_rect = False
+            elif x >= size - corner_r and y < corner_r:
+                if (x - (size - corner_r))**2 + (y - corner_r)**2 > corner_r**2: in_rect = False
+            elif x < corner_r and y >= size - corner_r:
+                if (x - corner_r)**2 + (y - (size - corner_r))**2 > corner_r**2: in_rect = False
+            elif x >= size - corner_r and y >= size - corner_r:
+                if (x - (size - corner_r))**2 + (y - (size - corner_r))**2 > corner_r**2: in_rect = False
+            if not in_rect:
+                r, g, b, a = 0, 0, 0, 0
+            else:
+                # Green circle in center
+                dist = ((x - center)**2 + (y - center)**2) ** 0.5
+                if dist < radius:
+                    r, g, b = 16, 185, 129  # accent green
+                    # Simple flame shape (white) - a diamond/teardrop
+                    fx = (x - center) / (size * 0.12)
+                    fy = (y - center) / (size * 0.18)
+                    if abs(fx) + abs(fy + 0.3) < 1.0 and fy < 0.6:
+                        r, g, b = 255, 255, 255
+            row.extend([r, g, b, a])
+        pixels.append(bytes(row))
+    # Encode as PNG
+    def make_png(w, h, rows):
+        def chunk(ctype, data):
+            c = ctype + data
+            return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+        raw = b""
+        for row in rows:
+            raw += b"\x00" + row
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    png_data = make_png(size, size, pixels)
+    return app.response_class(png_data, mimetype="image/png")
+
 @app.route("/api/jslog", methods=["POST"])
 def js_log():
     """Receive browser JS logs and print to stdout (docker logs)."""
@@ -1300,6 +1387,12 @@ def history_page():
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 STYLE = """
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#10b981">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CalorieTracker">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <style>
 :root{
   --bg:#0a0d12;--bg-elev:#0f131a;--surface:#141821;--surface2:#1c2230;--surface3:#252b3a;
@@ -1735,6 +1828,7 @@ NAV = """
     <a href="/logout" class="nav-link" title="Logout" style="padding:4px 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></a>
   </div>
 </nav>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){});}</script>
 """ + I18N
 
 LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
